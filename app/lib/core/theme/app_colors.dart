@@ -72,17 +72,17 @@ class KofePalette extends ThemeExtension<KofePalette> {
   );
 
   static const dark = KofePalette(
-    canvas: Color(0xFF191919),
+    canvas: Color(0xFF202020),
     surface: Color(0xFF262626),
     surfaceMuted: Color(0xFF303030),
-    ink: Color(0xFFF4F4F4),
-    inkMuted: Color(0xFFA8A8A8),
-    line: Color(0xFF414141),
+    ink: Color(0xFFF1F0ED),
+    inkMuted: Color(0xFFA6A6A3),
+    line: Color(0xFF363636),
     accent: Color(0xFFD7B78B),
     onAccent: Color(0xFF191919),
-    action: Color(0xFFF4F4F4),
-    onAction: Color(0xFF191919),
-    imageBackdrop: Color(0xFF303030),
+    action: Color(0xFFF1F0ED),
+    onAction: Color(0xFF202020),
+    imageBackdrop: Color(0xFF2D2D2D),
   );
 
   @override

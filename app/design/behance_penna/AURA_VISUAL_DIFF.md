@@ -18,6 +18,13 @@
   the bottom navigation opens a live order screen. Its vertical tracker uses a
   visible «Сейчас» label, larger current stage, completed checkmarks and muted
   future stages; `issued` removes the live card and returns the order to history.
+- Cart product rows now follow the borderless Source 1 composition, with a
+  plain centered title and circular controls. Profile groups and checkout
+  surfaces no longer receive an automatic outline.
+- Dark profile colours are contextual rather than static: graphite surfaces,
+  off-white text and muted secondary copy preserve the source hierarchy.
+- Pickup venue selection validates the full persisted configuration against
+  the target venue menu before retaining the cart and updating its prices.
 
 ## Intentional differences
 

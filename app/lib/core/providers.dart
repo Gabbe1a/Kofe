@@ -113,7 +113,10 @@ class CartNotifier extends StateNotifier<CartState> {
         modifiers: modifiers,
       ));
     }
-    state = state.copyWith(items: next);
+    state = state.copyWith(
+      items: next,
+      addressConfirmed: state.items.isEmpty ? false : state.addressConfirmed,
+    );
     _persist();
   }
 
@@ -242,7 +245,19 @@ class CartNotifier extends StateNotifier<CartState> {
   }
 
   void clear() {
-    state = state.copyWith(items: [], bonusPoints: 0);
+    state = state.copyWith(
+      items: [],
+      bonusPoints: 0,
+      addressConfirmed: false,
+    );
+    _persist();
+  }
+
+  void replaceForVenue(List<CartItem> items) {
+    state = state.copyWith(
+      items: items,
+      addressConfirmed: false,
+    );
     _persist();
   }
 

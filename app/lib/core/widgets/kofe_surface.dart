@@ -38,7 +38,9 @@ class KofeSurface extends StatelessWidget {
     final palette = context.kofePalette;
     final shape = RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(radius),
-      side: BorderSide(color: borderColor ?? palette.line),
+      side: borderColor == null
+          ? BorderSide.none
+          : BorderSide(color: borderColor!),
     );
     return Padding(
       padding: margin ?? EdgeInsets.zero,

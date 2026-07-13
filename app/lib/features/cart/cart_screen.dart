@@ -55,8 +55,6 @@ class _CartScreenState extends ConsumerState<CartScreen> {
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 192),
               children: [
                 _Header(onBack: () => context.go('/menu')),
-                const SizedBox(height: 24),
-                Text('Корзина', style: Theme.of(context).textTheme.displayLarge),
                 const SizedBox(height: 18),
                 ...List.generate(cart.items.length, (index) => _CartLine(
                   item: cart.items[index],
@@ -82,12 +80,16 @@ class _CartScreenState extends ConsumerState<CartScreen> {
                       _CheckoutRow(
                         icon: Icons.location_on_outlined,
                         title: session.venue?.shortName ?? 'Точка не выбрана',
-                        subtitle: cart.addressConfirmed ? 'Точка подтверждена' : 'Подтвердите точку получения',
+                        subtitle: session.venue == null
+                            ? 'Выберите точку получения'
+                            : cart.addressConfirmed
+                                ? '${session.venue!.fullAddress} · подтверждено'
+                                : '${session.venue!.fullAddress} · подтвердите',
                         trailing: Switch.adaptive(
                           value: cart.addressConfirmed,
                           onChanged: ref.read(cartProvider.notifier).setAddressConfirmed,
                         ),
-                        onTap: () => ref.read(cartProvider.notifier).setAddressConfirmed(!cart.addressConfirmed),
+                        onTap: () => _selectPickupVenue(context),
                       ),
                       _CheckoutRow(
                         icon: Icons.schedule_outlined,
@@ -258,6 +260,234 @@ class _CartScreenState extends ConsumerState<CartScreen> {
     } catch (_) {
       // Checkout remains usable when the secondary profile refresh fails.
     }
+  }
+
+  Future<void> _selectPickupVenue(BuildContext context) async {
+    final session = ref.read(sessionProvider);
+    final cityId = session.cityId;
+    if (cityId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Сначала выберите город.')),
+      );
+      return;
+    }
+
+    try {
+      final venues = await ref.read(apiProvider).fetchVenues(cityId: cityId);
+      if (!mounted) return;
+      final selected = await showModalBottomSheet<Venue>(
+        context: context,
+        showDragHandle: true,
+        isScrollControlled: true,
+        builder: (sheetContext) => _VenuePickerSheet(
+          venues: venues,
+          selectedId: session.venueId,
+        ),
+      );
+      if (!mounted || selected == null) return;
+
+      if (selected.id == session.venueId) {
+        ref.read(cartProvider.notifier).setAddressConfirmed(true);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Точка «${selected.shortName}» подтверждена.')),
+        );
+        return;
+      }
+
+      final targetCatalog = await ref.read(apiProvider).fetchProducts(
+        venueId: selected.id,
+      );
+      if (!mounted) return;
+      final cart = ref.read(cartProvider);
+      final transfer = _buildVenueTransfer(cart, targetCatalog);
+      if (transfer.issues.isNotEmpty) {
+        await showDialog<void>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: Text('Не всё доступно в «${selected.shortName}»'),
+            content: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 420),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Корзина сохранена без изменений. Замените или удалите следующие позиции и попробуйте снова:',
+                  ),
+                  const SizedBox(height: 12),
+                  ...transfer.issues.map(
+                    (issue) => Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Icon(Icons.info_outline_rounded, size: 18),
+                          const SizedBox(width: 8),
+                          Expanded(child: Text(issue)),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              FilledButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('Понятно'),
+              ),
+            ],
+          ),
+        );
+        return;
+      }
+
+      final priceChanged = (cart.total - transfer.total).abs() >= 0.01;
+      if (priceChanged) {
+        final approved = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('Стоимость изменится'),
+            content: Text(
+              'В точке «${selected.shortName}» все позиции доступны, но действуют другие цены. '
+              '${cart.total.toStringAsFixed(0)} ₽ → ${transfer.total.toStringAsFixed(0)} ₽.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('Оставить текущую'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text('Сменить точку'),
+              ),
+            ],
+          ),
+        );
+        if (approved != true || !mounted) return;
+      }
+
+      ref.read(sessionProvider.notifier).setVenue(selected);
+      ref.read(cartProvider.notifier).replaceForVenue(transfer.items);
+      ref.read(cartProvider.notifier).setAddressConfirmed(true);
+      ref.invalidate(productsProvider(null));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Точка изменена на «${selected.shortName}». Корзина сохранена и цены обновлены.',
+          ),
+        ),
+      );
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Не удалось проверить меню точки: ${error.message}')),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Не удалось загрузить список точек. Попробуйте ещё раз.')),
+      );
+    }
+  }
+
+  static _VenueTransfer _buildVenueTransfer(
+    CartState cart,
+    List<Product> catalog,
+  ) {
+    final byId = {for (final product in catalog) product.id: product};
+    final issues = <String>[];
+    final items = <CartItem>[];
+
+    for (final oldItem in cart.items) {
+      final product = byId[oldItem.product.id];
+      if (product == null) {
+        issues.add('«${oldItem.product.title}» — товар недоступен.');
+        continue;
+      }
+
+      var valid = true;
+      ProductSize? size;
+      if (oldItem.size != null) {
+        for (final candidate in product.sizes) {
+          if (candidate.id == oldItem.size!.id) {
+            size = candidate;
+            break;
+          }
+        }
+        if (size == null) {
+          issues.add(
+            '«${product.title}» — нет размера ${oldItem.size!.label} (${oldItem.size!.ml} мл).',
+          );
+          valid = false;
+        }
+      }
+
+      final modifiers = <SelectedModifier>[];
+      final selectedGroupIds = <String>{};
+      for (final oldModifier in oldItem.modifiers) {
+        selectedGroupIds.add(oldModifier.groupId);
+        ModifierGroup? group;
+        for (final candidate in product.modifierGroups) {
+          if (candidate.id == oldModifier.groupId) {
+            group = candidate;
+            break;
+          }
+        }
+        if (group == null) {
+          issues.add(
+            '«${product.title}» — настройка «${oldModifier.groupTitle}» недоступна.',
+          );
+          valid = false;
+          continue;
+        }
+        ModifierOption? option;
+        for (final candidate in group.options) {
+          if (candidate.id == oldModifier.optionId) {
+            option = candidate;
+            break;
+          }
+        }
+        if (option == null) {
+          issues.add(
+            '«${product.title}» — нет добавки «${oldModifier.optionTitle}».',
+          );
+          valid = false;
+          continue;
+        }
+        modifiers.add(
+          SelectedModifier(
+            groupId: group.id,
+            groupTitle: group.title,
+            optionId: option.id,
+            optionTitle: option.title,
+            priceDelta: option.priceDelta,
+          ),
+        );
+      }
+
+      for (final group in product.modifierGroups) {
+        if (group.required && !selectedGroupIds.contains(group.id)) {
+          issues.add(
+            '«${product.title}» — нужно выбрать «${group.title.toLowerCase()}».',
+          );
+          valid = false;
+        }
+      }
+
+      if (valid) {
+        items.add(
+          CartItem(
+            product: product,
+            qty: oldItem.qty,
+            size: size,
+            modifiers: modifiers,
+          ),
+        );
+      }
+    }
+
+    return _VenueTransfer(items: items, issues: issues);
   }
 
   Future<void> _reconcileFailedCheckout() async {
@@ -495,6 +725,107 @@ class _CartScreenState extends ConsumerState<CartScreen> {
   }
 }
 
+class _VenueTransfer {
+  const _VenueTransfer({required this.items, required this.issues});
+
+  final List<CartItem> items;
+  final List<String> issues;
+
+  double get total => items.fold<double>(0, (sum, item) => sum + item.lineTotal);
+}
+
+class _VenuePickerSheet extends StatelessWidget {
+  const _VenuePickerSheet({required this.venues, required this.selectedId});
+
+  final List<Venue> venues;
+  final String? selectedId;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.kofePalette;
+    return SafeArea(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(context).height * 0.72,
+        ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Точка получения', style: Theme.of(context).textTheme.headlineMedium),
+              const SizedBox(height: 6),
+              Text(
+                'При смене точки проверим каждый товар, размер, молоко и сироп. Корзина не очистится автоматически.',
+                style: TextStyle(color: palette.inkMuted, height: 1.35),
+              ),
+              const SizedBox(height: 14),
+              if (venues.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 24),
+                  child: Text('В выбранном городе пока нет доступных точек.', style: TextStyle(color: palette.inkMuted)),
+                )
+              else
+                Flexible(
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    itemCount: venues.length,
+                    separatorBuilder: (_, _) => Divider(color: palette.line, height: 1),
+                    itemBuilder: (context, index) {
+                      final venue = venues[index];
+                      final selected = venue.id == selectedId;
+                      return Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: () => Navigator.pop(context, venue),
+                          borderRadius: BorderRadius.circular(12),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            child: Row(
+                              children: [
+                                KofeRoundIcon(
+                                  icon: selected
+                                      ? Icons.check_rounded
+                                      : Icons.storefront_outlined,
+                                  color: selected ? palette.action : palette.surfaceMuted,
+                                  iconColor: selected ? palette.onAction : palette.ink,
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        venue.shortName,
+                                        style: const TextStyle(fontWeight: FontWeight.w800),
+                                      ),
+                                      const SizedBox(height: 3),
+                                      Text(
+                                        venue.fullAddress,
+                                        style: TextStyle(color: palette.inkMuted, fontSize: 12),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Icon(Icons.chevron_right_rounded, color: palette.inkMuted),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _PaymentReturnSheet extends ConsumerStatefulWidget {
   const _PaymentReturnSheet({required this.orderId});
 
@@ -680,7 +1011,7 @@ class _Header extends StatelessWidget {
     return Row(
       children: [
         Material(
-          color: palette.surface,
+          color: Colors.transparent,
           shape: const CircleBorder(),
           child: InkWell(
             onTap: onBack,
@@ -689,7 +1020,7 @@ class _Header extends StatelessWidget {
           ),
         ),
         const Spacer(),
-        Text('КОФЕ МАМА', style: TextStyle(color: palette.ink, fontSize: 12, fontWeight: FontWeight.w800, letterSpacing: 1.1)),
+        Text('Корзина', style: TextStyle(color: palette.ink, fontSize: 18, fontWeight: FontWeight.w900, letterSpacing: -0.4)),
         const Spacer(),
         const SizedBox(width: 42),
       ],
@@ -712,22 +1043,22 @@ class _CartLine extends StatelessWidget {
       ...item.modifiers.map((modifier) => modifier.optionTitle),
     ];
     return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.only(bottom: 8),
       child: Material(
-        color: palette.surface,
+        color: Colors.transparent,
         borderRadius: BorderRadius.circular(12),
         child: InkWell(
           onTap: onOpen,
           borderRadius: BorderRadius.circular(12),
           child: Padding(
-            padding: const EdgeInsets.all(10),
+            padding: const EdgeInsets.symmetric(vertical: 6),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Container(
-                  width: 82,
-                  height: 82,
-                  padding: const EdgeInsets.all(7),
+                  width: 80,
+                  height: 80,
+                  padding: const EdgeInsets.all(6),
                   decoration: BoxDecoration(color: palette.imageBackdrop, borderRadius: BorderRadius.circular(9)),
                   child: ProductImage(asset: item.product.imageAsset),
                 ),

@@ -122,7 +122,9 @@ Map<String, dynamic> _encodeVenue(Venue v) => {
 Venue _decodeVenue(Map<String, dynamic> j) => mapVenue(j);
 
 Map<String, dynamic> _encodeCart(CartState c) => {
-      'addressConfirmed': c.addressConfirmed,
+      // Confirmation belongs to one live checkout and must never survive an
+      // application restart or become the default for the next order.
+      'addressConfirmed': false,
       'promoCode': c.promoCode,
       'comment': c.comment,
       'pickupAt': c.pickupAt?.toIso8601String(),
@@ -139,7 +141,7 @@ CartState _decodeCart(Map<String, dynamic>? j) {
   final savedPaymentLabel = j['paymentLabel'] as String?;
   return CartState(
     items: items,
-    addressConfirmed: j['addressConfirmed'] as bool? ?? false,
+    addressConfirmed: false,
     promoCode: j['promoCode'] as String?,
     comment: j['comment'] as String?,
     pickupAt: j['pickupAt'] == null

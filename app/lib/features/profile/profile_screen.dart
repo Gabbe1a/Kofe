@@ -36,6 +36,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.kofePalette;
     final session = ref.watch(sessionProvider);
     final ordersAsync = ref.watch(ordersProvider);
     final lastOrder = ordersAsync.maybeWhen(
@@ -73,7 +74,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             if (session.isAuthed) ...[
               KofeSurface(
                 padding: EdgeInsets.zero,
-                color: AppColors.surface,
+                color: palette.surface,
                 child: Column(
                   children: [
                     _ProfileRow(
@@ -91,7 +92,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                             width: double.infinity,
                             padding: const EdgeInsets.all(12),
                             decoration: BoxDecoration(
-                              color: AppColors.cream.withValues(alpha: 0.85),
+                              color: palette.surfaceMuted,
                               borderRadius: BorderRadius.circular(14),
                             ),
                             child: Row(
@@ -102,8 +103,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                     children: [
                                       Text(
                                         '${orderDateFmt.format(lastOrder.createdAt)} · ${lastOrder.status.localized}',
-                                        style: const TextStyle(
-                                          color: AppColors.inkMuted,
+                                        style: TextStyle(
+                                          color: palette.inkMuted,
                                           fontSize: 12,
                                           fontWeight: FontWeight.w700,
                                         ),
@@ -121,8 +122,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                 ),
                                 Text(
                                   '${lastOrder.total.toStringAsFixed(0)} ₽',
-                                  style: const TextStyle(
-                                    color: AppColors.forestDeep,
+                                  style: TextStyle(
+                                    color: palette.ink,
                                     fontWeight: FontWeight.w800,
                                   ),
                                 ),
@@ -137,13 +138,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               const SizedBox(height: 12),
               KofeSurface(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                color: AppColors.surface,
+                color: palette.surface,
                 child: Row(
                   children: [
-                    const KofeRoundIcon(
+                    KofeRoundIcon(
                       icon: Icons.notifications_none_rounded,
-                      color: AppColors.sageSoft,
-                      iconColor: AppColors.forestDeep,
+                      color: palette.surfaceMuted,
+                      iconColor: palette.ink,
                     ),
                     const SizedBox(width: 12),
                     const Expanded(
@@ -157,8 +158,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     ),
                     Switch.adaptive(
                       value: true,
-                      activeThumbColor: AppColors.surface,
-                      activeTrackColor: AppColors.forest,
                       onChanged: (_) => _openNotifications(context),
                     ),
                   ],
@@ -167,7 +166,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               const SizedBox(height: 12),
               KofeSurface(
                 padding: EdgeInsets.zero,
-                color: AppColors.surface,
+                color: palette.surface,
                 child: Column(
                   children: [
                     _ProfileRow(
@@ -204,7 +203,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             ] else
               KofeSurface(
                 padding: EdgeInsets.zero,
-                color: AppColors.creamWarm,
+                color: palette.surface,
                 child: Column(
                   children: [
                     _ProfileRow(
@@ -338,16 +337,17 @@ class _BrandRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.kofePalette;
     return Row(
       children: [
         Container(
           width: 44,
           height: 44,
-          decoration: const BoxDecoration(
-            color: AppColors.sageSoft,
+          decoration: BoxDecoration(
+            color: palette.surfaceMuted,
             shape: BoxShape.circle,
           ),
-          child: const Icon(Icons.local_cafe_rounded, color: AppColors.forest),
+          child: Icon(Icons.local_cafe_rounded, color: palette.ink),
         ),
         const SizedBox(width: 12),
         const Text(
@@ -370,8 +370,9 @@ class _GuestCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.kofePalette;
     return KofeSurface(
-      color: AppColors.forest,
+      color: palette.surface,
       padding: const EdgeInsets.fromLTRB(24, 26, 24, 22),
       child: Column(
         children: [
@@ -380,19 +381,19 @@ class _GuestCard extends StatelessWidget {
             height: 78,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: AppColors.cream.withValues(alpha: 0.14),
+              color: palette.surfaceMuted,
             ),
-            child: const Icon(
+            child: Icon(
               Icons.person_outline_rounded,
-              color: AppColors.cream,
+              color: palette.ink,
               size: 38,
             ),
           ),
           const SizedBox(height: 16),
-          const Text(
+          Text(
             'Гость',
             style: TextStyle(
-              color: AppColors.cream,
+              color: palette.ink,
               fontSize: 28,
               fontWeight: FontWeight.w900,
               letterSpacing: -0.6,
@@ -403,7 +404,7 @@ class _GuestCard extends StatelessWidget {
             'Войдите, чтобы копить бонусы, видеть историю заказов и быстрее оплачивать кофе.',
             textAlign: TextAlign.center,
             style: TextStyle(
-              color: AppColors.cream.withValues(alpha: 0.82),
+              color: palette.inkMuted,
               height: 1.35,
             ),
           ),
@@ -412,8 +413,8 @@ class _GuestCard extends StatelessWidget {
             width: double.infinity,
             child: ElevatedButton(
               style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.cream,
-                foregroundColor: AppColors.forest,
+                backgroundColor: palette.action,
+                foregroundColor: palette.onAction,
               ),
               onPressed: onLogin,
               child: const Text('Войти'),
@@ -438,6 +439,7 @@ class _MemberCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.kofePalette;
     final initials = name
         .split(' ')
         .where((part) => part.isNotEmpty)
@@ -447,7 +449,7 @@ class _MemberCard extends StatelessWidget {
         .toUpperCase();
 
     return KofeSurface(
-      color: AppColors.forest,
+      color: palette.surface,
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 18),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -458,14 +460,14 @@ class _MemberCard extends StatelessWidget {
                 width: 64,
                 height: 64,
                 alignment: Alignment.center,
-                decoration: const BoxDecoration(
-                  color: AppColors.cream,
+                decoration: BoxDecoration(
+                  color: palette.surfaceMuted,
                   shape: BoxShape.circle,
                 ),
                 child: Text(
                   initials,
-                  style: const TextStyle(
-                    color: AppColors.forest,
+                  style: TextStyle(
+                    color: palette.ink,
                     fontSize: 20,
                     fontWeight: FontWeight.w900,
                   ),
@@ -480,8 +482,8 @@ class _MemberCard extends StatelessWidget {
                       name,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: AppColors.cream,
+                      style: TextStyle(
+                        color: palette.ink,
                         fontSize: 22,
                         fontWeight: FontWeight.w900,
                         letterSpacing: -0.45,
@@ -491,7 +493,7 @@ class _MemberCard extends StatelessWidget {
                     Text(
                       phone,
                       style: TextStyle(
-                        color: AppColors.cream.withValues(alpha: 0.78),
+                        color: palette.inkMuted,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
@@ -505,15 +507,15 @@ class _MemberCard extends StatelessWidget {
             width: double.infinity,
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: AppColors.cream.withValues(alpha: 0.13),
+              color: palette.surfaceMuted,
               borderRadius: BorderRadius.circular(22),
             ),
             child: Row(
               children: [
-                const KofeRoundIcon(
+                KofeRoundIcon(
                   icon: Icons.stars_rounded,
-                  color: AppColors.caramel,
-                  iconColor: AppColors.forest,
+                  color: palette.accent,
+                  iconColor: palette.onAccent,
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -522,8 +524,8 @@ class _MemberCard extends StatelessWidget {
                     children: [
                       Text(
                         '$bonusBalance Бонусов',
-                        style: const TextStyle(
-                          color: AppColors.cream,
+                        style: TextStyle(
+                          color: palette.ink,
                           fontSize: 20,
                           fontWeight: FontWeight.w900,
                         ),
@@ -532,7 +534,7 @@ class _MemberCard extends StatelessWidget {
                       Text(
                         'Списывайте до всей суммы заказа, оставляя 1 ₽',
                         style: TextStyle(
-                          color: AppColors.cream.withValues(alpha: 0.78),
+                          color: palette.inkMuted,
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
                         ),
@@ -566,6 +568,7 @@ class _ProfileRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.kofePalette;
     return Column(
       children: [
         InkWell(
@@ -582,7 +585,8 @@ class _ProfileRow extends StatelessWidget {
                     children: [
                       Text(
                         title,
-                        style: const TextStyle(
+                        style: TextStyle(
+                          color: palette.ink,
                           fontSize: 15,
                           fontWeight: FontWeight.w900,
                         ),
@@ -593,8 +597,8 @@ class _ProfileRow extends StatelessWidget {
                           subtitle!,
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: AppColors.inkMuted,
+                          style: TextStyle(
+                            color: palette.inkMuted,
                             fontSize: 12,
                             height: 1.25,
                           ),
@@ -604,15 +608,15 @@ class _ProfileRow extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 4),
-                const Icon(
+                Icon(
                   Icons.chevron_right_rounded,
-                  color: AppColors.inkMuted,
+                  color: palette.inkMuted,
                 ),
               ],
             ),
           ),
         ),
-        if (showDivider) const Divider(height: 1, indent: 70),
+        if (showDivider) Divider(height: 1, indent: 70, color: palette.line),
       ],
     );
   }
@@ -623,6 +627,7 @@ class _NotificationsScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final palette = context.kofePalette;
     final fmt = DateFormat('dd.MM HH:mm');
     final notificationsAsync = ref.watch(notificationsProvider);
 
@@ -638,15 +643,15 @@ class _NotificationsScreen extends ConsumerWidget {
             child: Text(
               'Ошибка загрузки\n$e',
               textAlign: TextAlign.center,
-              style: const TextStyle(color: AppColors.inkMuted),
+              style: TextStyle(color: palette.inkMuted),
             ),
           ),
           data: (notifications) {
             if (notifications.isEmpty) {
-              return const Center(
+              return Center(
                 child: Text(
                   'Пока нет уведомлений',
-                  style: TextStyle(color: AppColors.inkMuted),
+                  style: TextStyle(color: palette.inkMuted),
                 ),
               );
             }
@@ -657,7 +662,7 @@ class _NotificationsScreen extends ConsumerWidget {
               itemBuilder: (context, index) {
                 final notification = notifications[index];
                 return KofeSurface(
-                  color: AppColors.creamWarm,
+                  color: palette.surface,
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -678,8 +683,8 @@ class _NotificationsScreen extends ConsumerWidget {
                             const SizedBox(height: 4),
                             Text(
                               notification.body,
-                              style: const TextStyle(
-                                color: AppColors.inkMuted,
+                              style: TextStyle(
+                                color: palette.inkMuted,
                                 fontSize: 13,
                                 height: 1.3,
                               ),
@@ -687,8 +692,8 @@ class _NotificationsScreen extends ConsumerWidget {
                             const SizedBox(height: 6),
                             Text(
                               fmt.format(notification.createdAt),
-                              style: const TextStyle(
-                                color: AppColors.inkMuted,
+                              style: TextStyle(
+                                color: palette.inkMuted,
                                 fontSize: 11,
                               ),
                             ),
