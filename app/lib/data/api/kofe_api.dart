@@ -157,6 +157,7 @@ class KofeApi {
     String? promoCode,
     String? comment,
     DateTime? pickupAt,
+    int bonusPoints = 0,
   }) async {
     final data = await _post('/orders', {
       'venue_id': venueId,
@@ -176,6 +177,7 @@ class KofeApi {
           },
       ],
       'promo_code': _optionalText(promoCode),
+      'bonus_points': bonusPoints,
       'address_confirmed': true,
       'comment': _optionalText(comment),
       'pickup_at': pickupAt?.toIso8601String(),
@@ -185,6 +187,8 @@ class KofeApi {
       id: data['id'] as String,
       status: data['status'] as String,
       total: (data['total'] as num).toDouble(),
+      paymentTotal: (data['paymentTotal'] as num).toDouble(),
+      bonusSpent: data['bonusSpent'] as int? ?? 0,
     );
   }
 

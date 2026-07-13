@@ -181,6 +181,9 @@ class OrderSummary {
     required this.createdAt,
     this.summaryLine,
     this.venueId,
+    this.paymentTotal,
+    this.bonusSpent = 0,
+    this.bonusEarned = 0,
   });
   final String id;
   final String status;
@@ -188,16 +191,27 @@ class OrderSummary {
   final DateTime createdAt;
   final String? summaryLine;
   final String? venueId;
+  final double? paymentTotal;
+  final int bonusSpent;
+  final int bonusEarned;
 }
 
 /// Minimal response returned when the server has created an order ready for
 /// YooKassa payment. It is intentionally separate from [OrderSummary]: a
 /// newly created order does not yet have all history fields populated.
 class CheckoutOrder {
-  const CheckoutOrder({required this.id, required this.status, required this.total});
+  const CheckoutOrder({
+    required this.id,
+    required this.status,
+    required this.total,
+    required this.paymentTotal,
+    required this.bonusSpent,
+  });
   final String id;
   final String status;
   final double total;
+  final double paymentTotal;
+  final int bonusSpent;
 }
 
 class YooKassaPayment {

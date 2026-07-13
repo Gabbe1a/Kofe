@@ -242,7 +242,7 @@ class CartNotifier extends StateNotifier<CartState> {
   }
 
   void clear() {
-    state = state.copyWith(items: []);
+    state = state.copyWith(items: [], bonusPoints: 0);
     _persist();
   }
 
@@ -255,7 +255,13 @@ class CartNotifier extends StateNotifier<CartState> {
     state = state.copyWith(
       promoCode: code,
       clearPromo: code == null,
+      bonusPoints: 0,
     );
+    _persist();
+  }
+
+  void setBonusPoints(int points) {
+    state = state.copyWith(bonusPoints: points < 0 ? 0 : points);
     _persist();
   }
 

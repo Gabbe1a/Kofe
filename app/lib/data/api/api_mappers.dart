@@ -117,6 +117,9 @@ OrderSummary mapOrder(Map<String, dynamic> j) => OrderSummary(
       createdAt: DateTime.parse(j['createdAt'] as String),
       summaryLine: j['summaryLine'] as String?,
       venueId: j['venueId'] as String?,
+      paymentTotal: (j['paymentTotal'] as num?)?.toDouble(),
+      bonusSpent: j['bonusSpent'] as int? ?? 0,
+      bonusEarned: j['bonusEarned'] as int? ?? 0,
     );
 
 AppNotification mapNotification(Map<String, dynamic> j) => AppNotification(

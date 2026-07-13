@@ -78,6 +78,7 @@ class CartState {
     this.promoCode,
     this.comment,
     this.pickupAt,
+    this.bonusPoints = 0,
     this.paymentLabel = 'Онлайн через ЮKassa',
   });
 
@@ -86,6 +87,7 @@ class CartState {
   final String? promoCode;
   final String? comment;
   final DateTime? pickupAt;
+  final int bonusPoints;
   final String paymentLabel;
 
   int get totalQty => items.fold(0, (s, i) => s + i.qty);
@@ -93,6 +95,14 @@ class CartState {
   double get subtotal => items.fold(0, (s, i) => s + i.lineTotal);
 
   double get total => subtotal;
+
+  int get effectiveBonusPoints {
+    if (total <= 1) return 0;
+    final orderLimit = (total - 1).floor();
+    return bonusPoints.clamp(0, orderLimit) as int;
+  }
+
+  double get paymentTotal => isEmpty ? 0 : total - effectiveBonusPoints;
 
   bool get isEmpty => items.isEmpty;
 
@@ -105,6 +115,7 @@ class CartState {
     bool clearComment = false,
     DateTime? pickupAt,
     bool clearPickup = false,
+    int? bonusPoints,
     String? paymentLabel,
   }) {
     return CartState(
@@ -113,6 +124,7 @@ class CartState {
       promoCode: clearPromo ? null : (promoCode ?? this.promoCode),
       comment: clearComment ? null : (comment ?? this.comment),
       pickupAt: clearPickup ? null : (pickupAt ?? this.pickupAt),
+      bonusPoints: bonusPoints ?? this.bonusPoints,
       paymentLabel: paymentLabel ?? this.paymentLabel,
     );
   }

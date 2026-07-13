@@ -481,15 +481,36 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen>
                       const SizedBox(height: 14),
                       Divider(color: AppColors.ink.withValues(alpha: 0.08)),
                       const SizedBox(height: 10),
+                      if (order.bonusSpent > 0) ...[
+                        Row(
+                          children: [
+                            const Text('Стоимость заказа'),
+                            const Spacer(),
+                            Text('${order.total.toStringAsFixed(0)} ₽'),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            const Text('Оплачено бонусами'),
+                            const Spacer(),
+                            Text(
+                              '−${order.bonusSpent} ₽',
+                              style: const TextStyle(fontWeight: FontWeight.w800),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                      ],
                       Row(
                         children: [
-                          const Text(
-                            'Итого',
+                          Text(
+                            order.bonusSpent > 0 ? 'Оплачено рублями' : 'Итого',
                             style: TextStyle(fontWeight: FontWeight.w700),
                           ),
                           const Spacer(),
                           Text(
-                            '${order.total.toStringAsFixed(0)} ₽',
+                            '${(order.paymentTotal ?? order.total).toStringAsFixed(0)} ₽',
                             style: const TextStyle(
                               fontWeight: FontWeight.w900,
                               fontSize: 18,
@@ -497,6 +518,22 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen>
                           ),
                         ],
                       ),
+                      if (order.bonusEarned > 0) ...[
+                        const SizedBox(height: 10),
+                        Row(
+                          children: [
+                            const Text('Начислено за заказ'),
+                            const Spacer(),
+                            Text(
+                              '+${order.bonusEarned} бонусов',
+                              style: const TextStyle(
+                                color: AppColors.forest,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
                     ],
                   ),
                 ),

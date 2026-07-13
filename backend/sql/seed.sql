@@ -128,9 +128,9 @@ INSERT INTO promo_slides (id, title, body, cta_url, image_asset, sort_order) VAL
 INSERT INTO users (id, name, phone, birth_date, bonus_balance) VALUES
   ('u_demo', 'Табунщиков Михаил', '+7 (988) 342-99-00', '2004-03-09', 129);
 
-INSERT INTO orders (id, user_id, venue_id, status, total, created_at, summary_line) VALUES
-  ('55743', 'u_demo', 'v2', 'Выполнен', 349, '2026-06-27 08:57:00+03', 'Карамельный фраппучино'),
-  ('18206', 'u_demo', 'v1', 'Выполнен', 289, '2026-06-25 09:10:00+03', 'Капучино 300мл');
+INSERT INTO orders (id, user_id, venue_id, status, total, payment_total, created_at, summary_line) VALUES
+  ('55743', 'u_demo', 'v2', 'Выполнен', 349, 349, '2026-06-27 08:57:00+03', 'Карамельный фраппучино'),
+  ('18206', 'u_demo', 'v1', 'Выполнен', 289, 289, '2026-06-25 09:10:00+03', 'Капучино 300мл');
 
 INSERT INTO notifications (id, type, title, body, created_at, order_id) VALUES
   ('n1', 'order', 'Заказ 55743', 'Табунщиков, Ваш заказ №55743 приготовлен.', '2026-06-27 08:45:00+03', '55743'),

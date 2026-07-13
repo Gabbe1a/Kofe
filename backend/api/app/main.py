@@ -10,6 +10,7 @@ import secrets
 import time
 import uuid
 from contextlib import contextmanager
+from decimal import Decimal, ROUND_DOWN
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -72,6 +73,24 @@ def money(value: Any) -> float:
     return float(value) if value is not None else 0.0
 
 
+BONUS_ACCRUAL_RATE = Decimal('0.05')
+MINIMUM_CASH_PAYMENT = Decimal('1.00')
+
+
+def earned_bonus_points(payment_total: Any) -> int:
+    """Five percent of the rouble payment, rounded down to whole points."""
+    value = Decimal(str(payment_total or 0)) * BONUS_ACCRUAL_RATE
+    return int(value.to_integral_value(rounding=ROUND_DOWN))
+
+
+def maximum_bonus_points(order_total: Any) -> int:
+    """Allow bonuses to cover everything except the final one rouble."""
+    value = Decimal(str(order_total or 0)) - MINIMUM_CASH_PAYMENT
+    if value <= 0:
+        return 0
+    return int(value.to_integral_value(rounding=ROUND_DOWN))
+
+
 def media_url(object_key: str | None) -> str | None:
     if not object_key or not MEDIA_BASE_URL:
         return None
@@ -94,6 +113,7 @@ class QuoteRequest(BaseModel):
     venue_id: str
     items: list[CartItemInput] = Field(min_length=1)
     promo_code: str | None = None
+    bonus_points: int = Field(default=0, ge=0)
 
 
 class CreateOrderRequest(QuoteRequest):
@@ -444,6 +464,157 @@ def _quote(conn: psycopg.Connection, payload: QuoteRequest) -> dict[str, Any]:
     return {'items': lines, 'subtotal': round(subtotal, 2), 'discount': round(discount, 2), 'total': round(subtotal - discount, 2)}
 
 
+def _apply_loyalty(
+    conn: psycopg.Connection,
+    quote: dict[str, Any],
+    requested_points: int,
+    user_id: str,
+    *,
+    lock_user: bool = False,
+) -> dict[str, Any]:
+    suffix = ' FOR UPDATE' if lock_user else ''
+    user = conn.execute(
+        f'SELECT id, bonus_balance FROM users WHERE id = %s{suffix}',
+        (user_id,),
+    ).fetchone()
+    if not user:
+        raise HTTPException(status_code=404, detail='User not found')
+
+    balance = int(user['bonus_balance'])
+    if Decimal(str(quote['total'])) < MINIMUM_CASH_PAYMENT:
+        raise HTTPException(
+            status_code=422,
+            detail='Сумма заказа после скидок должна быть не меньше 1 ₽',
+        )
+    order_limit = maximum_bonus_points(quote['total'])
+    available = min(balance, order_limit)
+    if requested_points > balance:
+        raise HTTPException(status_code=409, detail='Недостаточно бонусов на балансе')
+    if requested_points > order_limit:
+        raise HTTPException(
+            status_code=422,
+            detail='После списания бонусов к оплате должен остаться минимум 1 ₽',
+        )
+
+    payment_total = round(money(quote['total']) - requested_points, 2)
+    return {
+        **quote,
+        'bonusBalance': balance,
+        'maxBonusPoints': available,
+        'bonusSpent': requested_points,
+        'paymentTotal': payment_total,
+        'bonusEarnedPreview': earned_bonus_points(payment_total),
+    }
+
+
+def _award_order_bonuses(conn: psycopg.Connection, order_id: str) -> int:
+    """Award once after issue; the ledger and order snapshot make it idempotent."""
+    order = conn.execute(
+        '''SELECT id, user_id, status, payment_total, bonus_earned
+           FROM orders WHERE id = %s FOR UPDATE''',
+        (order_id,),
+    ).fetchone()
+    if not order or order['status'] != 'issued' or not order['user_id']:
+        return 0
+    if int(order['bonus_earned'] or 0) > 0:
+        return int(order['bonus_earned'])
+    existing = conn.execute(
+        "SELECT 1 FROM bonus_transactions WHERE order_id = %s AND kind = 'earn'",
+        (order_id,),
+    ).fetchone()
+    if existing:
+        return 0
+
+    points = earned_bonus_points(order['payment_total'])
+    if points <= 0:
+        return 0
+    user = conn.execute(
+        'SELECT bonus_balance FROM users WHERE id = %s FOR UPDATE',
+        (order['user_id'],),
+    ).fetchone()
+    if not user:
+        return 0
+    balance_after = int(user['bonus_balance']) + points
+    conn.execute(
+        'UPDATE users SET bonus_balance = %s WHERE id = %s',
+        (balance_after, order['user_id']),
+    )
+    conn.execute(
+        'UPDATE orders SET bonus_earned = %s WHERE id = %s',
+        (points, order_id),
+    )
+    conn.execute(
+        '''INSERT INTO bonus_transactions
+           (id, user_id, order_id, kind, points, balance_after, description)
+           VALUES (%s, %s, %s, 'earn', %s, %s, %s)''',
+        (
+            str(uuid.uuid4()), order['user_id'], order_id, points, balance_after,
+            '5% за выданный заказ',
+        ),
+    )
+    return points
+
+
+def _refund_order_bonuses(conn: psycopg.Connection, order_id: str) -> int:
+    order = conn.execute(
+        '''SELECT id, user_id, bonus_spent FROM orders
+           WHERE id = %s FOR UPDATE''',
+        (order_id,),
+    ).fetchone()
+    if not order or not order['user_id'] or int(order['bonus_spent'] or 0) <= 0:
+        return 0
+    existing = conn.execute(
+        "SELECT 1 FROM bonus_transactions WHERE order_id = %s AND kind = 'refund'",
+        (order_id,),
+    ).fetchone()
+    if existing:
+        return 0
+
+    points = int(order['bonus_spent'])
+    user = conn.execute(
+        'SELECT bonus_balance FROM users WHERE id = %s FOR UPDATE',
+        (order['user_id'],),
+    ).fetchone()
+    if not user:
+        return 0
+    balance_after = int(user['bonus_balance']) + points
+    conn.execute(
+        'UPDATE users SET bonus_balance = %s WHERE id = %s',
+        (balance_after, order['user_id']),
+    )
+    conn.execute(
+        '''INSERT INTO bonus_transactions
+           (id, user_id, order_id, kind, points, balance_after, description)
+           VALUES (%s, %s, %s, 'refund', %s, %s, %s)''',
+        (
+            str(uuid.uuid4()), order['user_id'], order_id, points, balance_after,
+            'Возврат за отменённую оплату',
+        ),
+    )
+    return points
+
+
+def _cancel_failed_payment(order_id: str) -> None:
+    with db() as conn:
+        order = conn.execute(
+            'SELECT status FROM orders WHERE id = %s FOR UPDATE',
+            (order_id,),
+        ).fetchone()
+        if not order or order['status'] != 'pending_payment':
+            return
+        _refund_order_bonuses(conn, order_id)
+        conn.execute(
+            "UPDATE orders SET status = 'cancelled', updated_at = NOW() WHERE id = %s",
+            (order_id,),
+        )
+        conn.execute(
+            '''INSERT INTO order_status_events
+               (id, order_id, from_status, to_status, actor_type)
+               VALUES (%s, %s, 'pending_payment', 'cancelled', 'payment_provider')''',
+            (str(uuid.uuid4()), order_id),
+        )
+
+
 def yookassa_settings() -> tuple[str, str, str]:
     shop_id = os.environ.get('YOOKASSA_SHOP_ID', '')
     secret_key = os.environ.get('YOOKASSA_SECRET_KEY', '')
@@ -500,6 +671,23 @@ def persist_yookassa_state(remote: dict[str, Any]) -> str:
                 conn.execute(
                     '''INSERT INTO order_status_events (id, order_id, from_status, to_status, actor_type)
                        VALUES (%s, %s, 'pending_payment', 'confirmed', 'payment_provider')''',
+                    (str(uuid.uuid4()), order_id),
+                )
+        elif status == 'canceled':
+            order = conn.execute(
+                'SELECT status FROM orders WHERE id = %s FOR UPDATE',
+                (order_id,),
+            ).fetchone()
+            if order and order['status'] == 'pending_payment':
+                _refund_order_bonuses(conn, order_id)
+                conn.execute(
+                    "UPDATE orders SET status = 'cancelled', updated_at = NOW() WHERE id = %s",
+                    (order_id,),
+                )
+                conn.execute(
+                    '''INSERT INTO order_status_events
+                       (id, order_id, from_status, to_status, actor_type)
+                       VALUES (%s, %s, 'pending_payment', 'cancelled', 'payment_provider')''',
                     (str(uuid.uuid4()), order_id),
                 )
     return status
@@ -761,7 +949,7 @@ def menu(venue_id: str = Query(...)) -> list[dict[str, Any]]:
 @app.post('/orders/quote')
 def quote_order(payload: QuoteRequest) -> dict[str, Any]:
     with db() as conn:
-        return _quote(conn, payload)
+        return _apply_loyalty(conn, _quote(conn, payload), payload.bonus_points, 'u_demo')
 
 
 @app.post('/admin/login')
@@ -944,19 +1132,19 @@ def admin_dashboard(
         elif allowed:
             filters.append('venue_id = ANY(%s)'); params.append(allowed)
         where = ' AND '.join(filters)
-        totals = conn.execute(f'''SELECT COUNT(*) AS orders, COALESCE(SUM(total) FILTER (WHERE status <> 'cancelled'),0) AS revenue,
-            COALESCE(AVG(total) FILTER (WHERE status <> 'cancelled'),0) AS average_check,
+        totals = conn.execute(f'''SELECT COUNT(*) FILTER (WHERE status <> 'cancelled') AS orders, COALESCE(SUM(payment_total) FILTER (WHERE status <> 'cancelled'),0) AS revenue,
+            COALESCE(AVG(payment_total) FILTER (WHERE status <> 'cancelled'),0) AS average_check,
             COUNT(*) FILTER (WHERE status IN ('pending_payment','confirmed','preparing','ready')) AS active_orders
             FROM orders WHERE {where}''', params).fetchone()
         venue_filter = 'WHERE v.id = %s' if venue_id else ('WHERE v.id = ANY(%s)' if allowed else '')
         venue_params = [days, venue_id] if venue_id else ([days, allowed] if allowed else [days])
-        by_venue = conn.execute(f'''SELECT v.id, v.short_name, COUNT(o.id) AS orders,
-            COALESCE(SUM(o.total) FILTER (WHERE o.status <> 'cancelled'),0) AS revenue
+        by_venue = conn.execute(f'''SELECT v.id, v.short_name, COUNT(o.id) FILTER (WHERE o.status <> 'cancelled') AS orders,
+            COALESCE(SUM(o.payment_total) FILTER (WHERE o.status <> 'cancelled'),0) AS revenue
             FROM venues v LEFT JOIN orders o ON o.venue_id=v.id AND o.created_at >= NOW()-(%s*INTERVAL '1 day')
             {venue_filter} GROUP BY v.id, v.short_name ORDER BY revenue DESC''', venue_params).fetchall()
         daily = conn.execute(f'''SELECT date_trunc('day', created_at)::date AS day,
                     COUNT(*) FILTER (WHERE status <> 'cancelled') AS orders,
-                    COALESCE(SUM(total) FILTER (WHERE status <> 'cancelled'),0) AS revenue
+                    COALESCE(SUM(payment_total) FILTER (WHERE status <> 'cancelled'),0) AS revenue
                 FROM orders WHERE {where} GROUP BY 1 ORDER BY 1''', params).fetchall()
     return {'days': days, 'orders': totals['orders'], 'revenue': money(totals['revenue']), 'averageCheck': money(totals['average_check']), 'activeOrders': totals['active_orders'], 'byVenue': [{'id':r['id'],'title':r['short_name'],'orders':r['orders'],'revenue':money(r['revenue'])} for r in by_venue], 'daily': [{'day': r['day'].isoformat(), 'orders': r['orders'], 'revenue': money(r['revenue'])} for r in daily]}
 
@@ -1438,7 +1626,8 @@ def update_order_status(
                VALUES (%s, %s, %s, %s, 'staff', %s)''',
             (str(uuid.uuid4()), order_id, order['status'], payload.status, staff['id']),
         )
-    return {'id': order_id, 'status': payload.status}
+        bonus_earned = _award_order_bonuses(conn, order_id) if payload.status == 'issued' else 0
+    return {'id': order_id, 'status': payload.status, 'bonusEarned': bonus_earned}
 
 
 @app.get('/admin-legacy', response_class=HTMLResponse, include_in_schema=False)
@@ -1469,22 +1658,52 @@ def create_order(payload: CreateOrderRequest) -> dict[str, Any]:
         raise HTTPException(status_code=422, detail='Address confirmation is required')
     with db() as conn:
         existing = conn.execute(
-            'SELECT id, status, total FROM orders WHERE idempotency_key = %s',
+            '''SELECT id, status, total, payment_total, bonus_spent
+               FROM orders WHERE idempotency_key = %s''',
             (payload.idempotency_key,),
         ).fetchone()
         if existing:
-            return {'id': existing['id'], 'status': existing['status'], 'total': money(existing['total'])}
-        quote = _quote(conn, payload)
+            return {
+                'id': existing['id'], 'status': existing['status'],
+                'total': money(existing['total']),
+                'paymentTotal': money(existing['payment_total']),
+                'bonusSpent': int(existing['bonus_spent'] or 0),
+            }
+        quote = _apply_loyalty(
+            conn,
+            _quote(conn, payload),
+            payload.bonus_points,
+            payload.user_id,
+            lock_user=True,
+        )
         order_id = str(uuid.uuid4())
         summary = ', '.join(line['title'] for line in quote['items'])[:250]
         conn.execute(
             '''INSERT INTO orders
-               (id, user_id, venue_id, status, total, subtotal, discount, summary_line,
-                comment, promo_code, address_confirmed, idempotency_key)
-               VALUES (%s, %s, %s, 'pending_payment', %s, %s, %s, %s, %s, %s, TRUE, %s)''',
-            (order_id, payload.user_id, payload.venue_id, quote['total'], quote['subtotal'],
-             quote['discount'], summary, payload.comment, payload.promo_code, payload.idempotency_key),
+               (id, user_id, venue_id, status, total, payment_total, bonus_spent,
+                subtotal, discount, summary_line, comment, promo_code,
+                address_confirmed, idempotency_key)
+               VALUES (%s, %s, %s, 'pending_payment', %s, %s, %s, %s, %s, %s,
+                       %s, %s, TRUE, %s)''',
+            (order_id, payload.user_id, payload.venue_id, quote['total'], quote['paymentTotal'],
+             quote['bonusSpent'], quote['subtotal'], quote['discount'], summary,
+             payload.comment, payload.promo_code, payload.idempotency_key),
         )
+        if quote['bonusSpent'] > 0:
+            balance_after = quote['bonusBalance'] - quote['bonusSpent']
+            conn.execute(
+                'UPDATE users SET bonus_balance = %s WHERE id = %s',
+                (balance_after, payload.user_id),
+            )
+            conn.execute(
+                '''INSERT INTO bonus_transactions
+                   (id, user_id, order_id, kind, points, balance_after, description)
+                   VALUES (%s, %s, %s, 'spend', %s, %s, %s)''',
+                (
+                    str(uuid.uuid4()), payload.user_id, order_id,
+                    -quote['bonusSpent'], balance_after, 'Списание на заказ',
+                ),
+            )
         for line in quote['items']:
             item_id = str(uuid.uuid4())
             conn.execute(
@@ -1505,7 +1724,13 @@ def create_order(payload: CreateOrderRequest) -> dict[str, Any]:
                VALUES (%s, %s, 'pending_payment', 'customer')''',
             (str(uuid.uuid4()), order_id),
         )
-        return {'id': order_id, 'status': 'pending_payment', 'total': quote['total']}
+        return {
+            'id': order_id,
+            'status': 'pending_payment',
+            'total': quote['total'],
+            'paymentTotal': quote['paymentTotal'],
+            'bonusSpent': quote['bonusSpent'],
+        }
 
 
 @app.post('/orders/{order_id}/payment')
@@ -1514,7 +1739,7 @@ async def start_yookassa_payment(order_id: str, _: PaymentStartRequest) -> dict[
     shop_id, secret_key, return_url = yookassa_settings()
     with db() as conn:
         order = conn.execute(
-            'SELECT id, total, status FROM orders WHERE id = %s', (order_id,),
+            'SELECT id, total, payment_total, status FROM orders WHERE id = %s', (order_id,),
         ).fetchone()
         if not order:
             raise HTTPException(status_code=404, detail='Order not found')
@@ -1538,12 +1763,12 @@ async def start_yookassa_payment(order_id: str, _: PaymentStartRequest) -> dict[
             conn.execute(
                 '''INSERT INTO payments (id, order_id, provider, amount, status, idempotency_key)
                    VALUES (%s, %s, 'yookassa', %s, 'creating', %s)''',
-                (payment_id, order_id, order['total'], idempotency_key),
+                (payment_id, order_id, order['payment_total'], idempotency_key),
             )
 
     import httpx
     body = {
-        'amount': {'value': f"{money(order['total']):.2f}", 'currency': 'RUB'},
+        'amount': {'value': f"{money(order['payment_total']):.2f}", 'currency': 'RUB'},
         'capture': True,
         'confirmation': {'type': 'redirect', 'return_url': return_url},
         'description': f'Заказ Кофе Мама {order_id}',
@@ -1572,6 +1797,7 @@ async def start_yookassa_payment(order_id: str, _: PaymentStartRequest) -> dict[
         )
         with db() as conn:
             conn.execute('UPDATE payments SET status = %s, updated_at = NOW() WHERE id = %s', ('failed', payment_id))
+        _cancel_failed_payment(order_id)
         raise HTTPException(
             status_code=502,
             detail=f'YooKassa rejected the payment ({provider_code})',
@@ -1714,7 +1940,8 @@ def orders() -> list[dict[str, Any]]:
     with db() as conn:
         rows = conn.execute(
             """
-            SELECT id, status, total, created_at, summary_line, venue_id
+            SELECT id, status, total, payment_total, bonus_spent, bonus_earned,
+                   created_at, summary_line, venue_id
             FROM orders ORDER BY created_at DESC
             """
         ).fetchall()
@@ -1723,6 +1950,9 @@ def orders() -> list[dict[str, Any]]:
             "id": r["id"],
             "status": r["status"],
             "total": money(r["total"]),
+            "paymentTotal": money(r["payment_total"]),
+            "bonusSpent": int(r["bonus_spent"] or 0),
+            "bonusEarned": int(r["bonus_earned"] or 0),
             "createdAt": r["created_at"].isoformat(),
             "summaryLine": r["summary_line"],
             "venueId": r["venue_id"],
@@ -1736,7 +1966,8 @@ def order(order_id: str) -> dict[str, Any]:
     with db() as conn:
         r = conn.execute(
             """
-            SELECT id, status, total, created_at, summary_line, venue_id
+            SELECT id, status, total, payment_total, bonus_spent, bonus_earned,
+                   created_at, summary_line, venue_id
             FROM orders WHERE id = %s
             """,
             (order_id,),
@@ -1747,6 +1978,9 @@ def order(order_id: str) -> dict[str, Any]:
         "id": r["id"],
         "status": r["status"],
         "total": money(r["total"]),
+        "paymentTotal": money(r["payment_total"]),
+        "bonusSpent": int(r["bonus_spent"] or 0),
+        "bonusEarned": int(r["bonus_earned"] or 0),
         "createdAt": r["created_at"].isoformat(),
         "summaryLine": r["summary_line"],
         "venueId": r["venue_id"],

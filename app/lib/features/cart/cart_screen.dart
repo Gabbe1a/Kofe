@@ -40,6 +40,11 @@ class _CartScreenState extends ConsumerState<CartScreen> {
       return _EmptyCart(isGuest: !session.isAuthed);
     }
 
+    final bonusBalance = session.user?.bonusBalance ?? 0;
+    final orderBonusLimit = max(0, (cart.total - 1).floor());
+    final availableBonusPoints = min(bonusBalance, orderBonusLimit);
+    final selectedBonusPoints = min(cart.effectiveBonusPoints, availableBonusPoints);
+    final paymentTotal = cart.total - selectedBonusPoints;
     final canPay = session.isAuthed && cart.addressConfirmed;
     return Scaffold(
       body: SafeArea(
@@ -97,6 +102,16 @@ class _CartScreenState extends ConsumerState<CartScreen> {
                         onTap: () => _promoSheet(context, ref),
                       ),
                       _CheckoutRow(
+                        icon: Icons.stars_rounded,
+                        title: 'Бонусы',
+                        subtitle: selectedBonusPoints > 0
+                            ? 'Списываем $selectedBonusPoints · останется ${bonusBalance - selectedBonusPoints}'
+                            : bonusBalance > 0
+                                ? 'Доступно $bonusBalance · 1 бонус = 1 ₽'
+                                : 'Пока нет бонусов для списания',
+                        onTap: () => _bonusSheet(context, ref),
+                      ),
+                      _CheckoutRow(
                         icon: Icons.chat_bubble_outline_rounded,
                         title: 'Комментарий',
                         subtitle: cart.comment?.isNotEmpty == true ? cart.comment! : 'Например, без трубочки',
@@ -119,7 +134,9 @@ class _CartScreenState extends ConsumerState<CartScreen> {
               right: 0,
               bottom: 0,
               child: _CheckoutBar(
-                total: cart.total,
+                total: paymentTotal,
+                originalTotal: selectedBonusPoints > 0 ? cart.total : null,
+                bonusPoints: selectedBonusPoints,
                 enabled: canPay && !_openingPayment,
                 label: _openingPayment
                     ? 'Открываем ЮKassa…'
@@ -142,14 +159,14 @@ class _CartScreenState extends ConsumerState<CartScreen> {
     return 'mobile-${DateTime.now().microsecondsSinceEpoch}-$entropy';
   }
 
-  String _cartFingerprint(CartState cart, String venueId) {
+  String _cartFingerprint(CartState cart, String venueId, int bonusPoints) {
     final lines = cart.items.map((item) {
       final modifiers = item.modifiers
           .map((modifier) => '${modifier.groupId}:${modifier.optionId}')
           .join(',');
       return '${item.product.id}:${item.size?.id ?? ''}:${item.qty}:$modifiers';
     }).join('|');
-    return '$venueId/$lines/${cart.promoCode ?? ''}/${cart.comment ?? ''}/${cart.pickupAt?.toIso8601String() ?? ''}';
+    return '$venueId/$lines/${cart.promoCode ?? ''}/$bonusPoints/${cart.comment ?? ''}/${cart.pickupAt?.toIso8601String() ?? ''}';
   }
 
   Future<void> _startYooKassaCheckout(
@@ -162,7 +179,9 @@ class _CartScreenState extends ConsumerState<CartScreen> {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Сначала выберите точку получения.')));
       return;
     }
-    final fingerprint = _cartFingerprint(cart, venueId);
+    final balance = session.user?.bonusBalance ?? 0;
+    final bonusPoints = min(cart.effectiveBonusPoints, balance);
+    final fingerprint = _cartFingerprint(cart, venueId, bonusPoints);
     if (_pendingCartFingerprint != fingerprint) {
       _pendingOrderId = null;
       _pendingIdempotencyKey = null;
@@ -181,10 +200,12 @@ class _CartScreenState extends ConsumerState<CartScreen> {
           promoCode: cart.promoCode,
           comment: cart.comment,
           pickupAt: cart.pickupAt,
+          bonusPoints: bonusPoints,
         );
         orderId = order.id;
         _pendingOrderId = order.id;
         _pendingCartFingerprint = fingerprint;
+        await _refreshProfile();
       }
       final payment = await api.startYooKassaPayment(orderId);
       // The sheet must already observe the app lifecycle before the external
@@ -209,9 +230,11 @@ class _CartScreenState extends ConsumerState<CartScreen> {
         _pendingCartFingerprint = null;
         ref.read(cartProvider.notifier).clear();
         ref.invalidate(ordersProvider);
+        await _refreshProfile();
         if (mounted) context.go('/active-order/$orderId');
       }
     } on ApiException catch (error) {
+      await _reconcileFailedCheckout();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Не удалось начать оплату: ${error.message}')),
@@ -226,6 +249,37 @@ class _CartScreenState extends ConsumerState<CartScreen> {
     } finally {
       if (mounted) setState(() => _openingPayment = false);
     }
+  }
+
+  Future<void> _refreshProfile() async {
+    try {
+      final user = await ref.read(apiProvider).fetchMe();
+      ref.read(sessionProvider.notifier).updateUser(user);
+    } catch (_) {
+      // Checkout remains usable when the secondary profile refresh fails.
+    }
+  }
+
+  Future<void> _reconcileFailedCheckout() async {
+    final orderId = _pendingOrderId;
+    if (orderId == null) {
+      _pendingIdempotencyKey = null;
+      _pendingCartFingerprint = null;
+      await _refreshProfile();
+      return;
+    }
+    try {
+      final order = await ref.read(apiProvider).fetchOrder(orderId);
+      if (order.status == 'cancelled' || order.status == 'canceled') {
+        _pendingOrderId = null;
+        _pendingIdempotencyKey = null;
+        _pendingCartFingerprint = null;
+      }
+    } catch (_) {
+      // Keep the idempotency data: a retry can safely reconcile an ambiguous
+      // provider/network response instead of creating a second payment.
+    }
+    await _refreshProfile();
   }
 
   Future<bool?> _paymentReturnSheet(BuildContext context, String orderId) {
@@ -325,6 +379,83 @@ class _CartScreenState extends ConsumerState<CartScreen> {
       ),
     );
     controller.dispose();
+  }
+
+  static Future<void> _bonusSheet(BuildContext context, WidgetRef ref) async {
+    final cart = ref.read(cartProvider);
+    final balance = ref.read(sessionProvider).user?.bonusBalance ?? 0;
+    final maxPoints = min(balance, max(0, (cart.total - 1).floor()));
+    var selected = min(cart.effectiveBonusPoints, maxPoints);
+
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, setModalState) => SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Списать бонусы', style: Theme.of(context).textTheme.headlineMedium),
+                const SizedBox(height: 6),
+                Text(
+                  maxPoints > 0
+                      ? 'Доступно $balance. Можно списать до $maxPoints, оставив к оплате минимум 1 ₽.'
+                      : balance == 0
+                          ? 'Бонусы появятся после выдачи заказа: начислим 5% от суммы, оплаченной рублями.'
+                          : 'Для этого заказа бонусы списать нельзя: к оплате должен остаться минимум 1 ₽.',
+                  style: TextStyle(color: context.kofePalette.inkMuted, height: 1.35),
+                ),
+                if (maxPoints > 0) ...[
+                  const SizedBox(height: 18),
+                  Row(
+                    children: [
+                      Text('$selected бонусов', style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
+                      const Spacer(),
+                      Text('к оплате ${(cart.total - selected).toStringAsFixed(0)} ₽', style: const TextStyle(fontWeight: FontWeight.w700)),
+                    ],
+                  ),
+                  Slider(
+                    value: selected.toDouble(),
+                    min: 0,
+                    max: maxPoints.toDouble(),
+                    divisions: maxPoints,
+                    label: '$selected',
+                    onChanged: (value) => setModalState(() => selected = value.round()),
+                  ),
+                  Row(
+                    children: [
+                      TextButton(
+                        onPressed: () => setModalState(() => selected = 0),
+                        child: const Text('Не списывать'),
+                      ),
+                      const Spacer(),
+                      TextButton(
+                        onPressed: () => setModalState(() => selected = maxPoints),
+                        child: const Text('Списать максимум'),
+                      ),
+                    ],
+                  ),
+                ],
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () {
+                      ref.read(cartProvider.notifier).setBonusPoints(selected);
+                      Navigator.pop(sheetContext);
+                    },
+                    child: Text(maxPoints > 0 ? 'Применить' : 'Понятно'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   static Future<void> _commentSheet(BuildContext context, WidgetRef ref) async {
@@ -731,8 +862,17 @@ class _CheckoutRow extends StatelessWidget {
 }
 
 class _CheckoutBar extends StatelessWidget {
-  const _CheckoutBar({required this.total, required this.enabled, required this.label, required this.onTap});
+  const _CheckoutBar({
+    required this.total,
+    required this.enabled,
+    required this.label,
+    required this.onTap,
+    this.originalTotal,
+    this.bonusPoints = 0,
+  });
   final double total;
+  final double? originalTotal;
+  final int bonusPoints;
   final bool enabled;
   final String label;
   final VoidCallback? onTap;
@@ -755,6 +895,19 @@ class _CheckoutBar extends StatelessWidget {
                   Text('${total.toStringAsFixed(0)} ₽', style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
                 ],
               ),
+              if (bonusPoints > 0) ...[
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Text('Бонусами', style: TextStyle(color: palette.inkMuted, fontSize: 12)),
+                    const Spacer(),
+                    Text(
+                      '−$bonusPoints ₽ из ${originalTotal!.toStringAsFixed(0)} ₽',
+                      style: TextStyle(color: palette.inkMuted, fontSize: 12, fontWeight: FontWeight.w700),
+                    ),
+                  ],
+                ),
+              ],
               const SizedBox(height: 10),
               SizedBox(width: double.infinity, child: ElevatedButton(onPressed: onTap, child: Text(label))),
             ],

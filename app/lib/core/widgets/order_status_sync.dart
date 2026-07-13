@@ -23,6 +23,7 @@ class _OrderStatusSyncState extends ConsumerState<OrderStatusSync>
     with WidgetsBindingObserver {
   static const _refreshInterval = Duration(seconds: 10);
   Timer? _refreshTimer;
+  bool _refreshingProfile = false;
 
   @override
   void initState() {
@@ -47,6 +48,29 @@ class _OrderStatusSyncState extends ConsumerState<OrderStatusSync>
     if (!ref.read(sessionProvider).isAuthed) return;
     ref.invalidate(ordersProvider);
     ref.invalidate(notificationsProvider);
+    unawaited(_refreshProfile());
+  }
+
+  Future<void> _refreshProfile() async {
+    if (_refreshingProfile) return;
+    _refreshingProfile = true;
+    try {
+      final fresh = await ref.read(apiProvider).fetchMe();
+      if (!mounted) return;
+      final current = ref.read(sessionProvider).user;
+      if (current == null ||
+          current.name != fresh.name ||
+          current.phone != fresh.phone ||
+          current.email != fresh.email ||
+          current.birthDate != fresh.birthDate ||
+          current.bonusBalance != fresh.bonusBalance) {
+        ref.read(sessionProvider.notifier).updateUser(fresh);
+      }
+    } catch (_) {
+      // Order polling must remain silent when the profile endpoint is offline.
+    } finally {
+      _refreshingProfile = false;
+    }
   }
 
   @override

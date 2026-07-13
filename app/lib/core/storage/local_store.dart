@@ -126,6 +126,7 @@ Map<String, dynamic> _encodeCart(CartState c) => {
       'promoCode': c.promoCode,
       'comment': c.comment,
       'pickupAt': c.pickupAt?.toIso8601String(),
+      'bonusPoints': c.bonusPoints,
       'paymentLabel': c.paymentLabel,
       'items': [for (final i in c.items) _encodeCartItem(i)],
     };
@@ -144,6 +145,7 @@ CartState _decodeCart(Map<String, dynamic>? j) {
     pickupAt: j['pickupAt'] == null
         ? null
         : DateTime.tryParse(j['pickupAt'] as String),
+    bonusPoints: j['bonusPoints'] as int? ?? 0,
     // The old build persisted a fictitious saved card. It is not a real
     // payment instrument and must never appear after moving to YooKassa.
     paymentLabel: savedPaymentLabel == null || savedPaymentLabel == 'Карта 2056'

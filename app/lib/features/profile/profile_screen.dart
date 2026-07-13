@@ -530,7 +530,7 @@ class _MemberCard extends StatelessWidget {
                       ),
                       const SizedBox(height: 3),
                       Text(
-                        'Оплачивайте до 50% заказа',
+                        'Списывайте до всей суммы заказа, оставляя 1 ₽',
                         style: TextStyle(
                           color: AppColors.cream.withValues(alpha: 0.78),
                           fontSize: 12,

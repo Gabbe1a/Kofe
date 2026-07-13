@@ -38,6 +38,7 @@ FILES = (
     'sql/migrate_yookassa.sql',
     'sql/migrate_admin_operations.sql',
     'sql/migrate_staff_admin_crud.sql',
+    'sql/migrate_loyalty.sql',
 )
 
 
@@ -110,6 +111,7 @@ def main() -> None:
             ('05', 'catalog_media'), ('06', 'order_core'), ('07', 'yookassa'),
             ('08', 'admin_operations'),
             ('09', 'staff_admin_crud'),
+            ('10', 'loyalty'),
         ):
             run(
                 client,

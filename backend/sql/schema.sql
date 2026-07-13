@@ -100,9 +100,27 @@ CREATE TABLE orders (
   venue_id TEXT REFERENCES venues(id),
   status TEXT NOT NULL,
   total NUMERIC(10, 2) NOT NULL,
+  payment_total NUMERIC(10, 2) NOT NULL CHECK (payment_total >= 1),
+  bonus_spent INT NOT NULL DEFAULT 0 CHECK (bonus_spent >= 0),
+  bonus_earned INT NOT NULL DEFAULT 0 CHECK (bonus_earned >= 0),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   summary_line TEXT
 );
+
+CREATE TABLE bonus_transactions (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id),
+  order_id TEXT REFERENCES orders(id),
+  kind TEXT NOT NULL CHECK (kind IN ('spend', 'earn', 'refund', 'adjustment')),
+  points INT NOT NULL CHECK (points <> 0),
+  balance_after INT NOT NULL CHECK (balance_after >= 0),
+  description TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (order_id, kind)
+);
+
+CREATE INDEX bonus_transactions_user_created_idx
+  ON bonus_transactions(user_id, created_at DESC);
 
 CREATE TABLE notifications (
   id TEXT PRIMARY KEY,
