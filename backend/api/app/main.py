@@ -1614,7 +1614,7 @@ def yookassa_payment_return() -> str:
     return '''<!doctype html><html lang="ru"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Кофе Мама — оплата</title>
 <style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#f7f2e9;color:#173d32;font:16px/1.5 Arial,sans-serif}.card{max-width:440px;margin:24px;padding:32px;border-radius:24px;background:#fff;text-align:center;box-shadow:0 14px 40px #173d3215}h1{margin:0 0 12px;font-size:26px}p{margin:0;color:#526159}.mark{width:52px;height:52px;margin:0 auto 20px;border-radius:50%;display:grid;place-items:center;background:#d7b78b;font-size:25px}</style>
-</head><body><main class="card"><div class="mark">✓</div><h1>Вернитесь в приложение</h1><p>Оплата обрабатывается ЮKassa. Откройте «Кофе Мама» и нажмите «Проверить оплату».</p></main></body></html>'''
+</head><body><main class="card"><div class="mark">✓</div><h1>Вернитесь в приложение</h1><p>Оплата обрабатывается ЮKassa. Откройте «Кофе Мама» — приложение проверит статус автоматически.</p></main></body></html>'''
 
 
 @app.post('/orders/{order_id}/review', status_code=201)

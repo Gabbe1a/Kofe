@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
@@ -186,15 +187,22 @@ class _CartScreenState extends ConsumerState<CartScreen> {
         _pendingCartFingerprint = fingerprint;
       }
       final payment = await api.startYooKassaPayment(orderId);
+      // The sheet must already observe the app lifecycle before the external
+      // browser takes over. This lets it reconcile the payment automatically
+      // as soon as the customer returns from YooKassa.
+      final paymentSheet = _paymentReturnSheet(context, orderId);
+      await WidgetsBinding.instance.endOfFrame;
       final didOpen = await launchUrl(
         Uri.parse(payment.confirmationUrl),
         mode: LaunchMode.externalApplication,
       );
       if (!didOpen) {
+        if (mounted) Navigator.of(context).pop(false);
+        await paymentSheet;
         throw StateError('Не удалось открыть защищённую страницу ЮKassa.');
       }
       if (!mounted) return;
-      final paid = await _paymentReturnSheet(context, orderId);
+      final paid = await paymentSheet;
       if (paid == true) {
         _pendingOrderId = null;
         _pendingIdempotencyKey = null;
@@ -220,74 +228,12 @@ class _CartScreenState extends ConsumerState<CartScreen> {
     }
   }
 
-  Future<bool?> _paymentReturnSheet(BuildContext context, String orderId) async {
-    var checking = false;
-    var message = 'После оплаты вернитесь в приложение и нажмите «Проверить оплату». Заказ не будет создан повторно.';
+  Future<bool?> _paymentReturnSheet(BuildContext context, String orderId) {
     return showModalBottomSheet<bool>(
       context: context,
       isDismissible: false,
       enableDrag: false,
-      builder: (sheetContext) => StatefulBuilder(
-        builder: (context, setSheetState) {
-          final palette = context.kofePalette;
-          return SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Center(child: Container(width: 38, height: 4, decoration: BoxDecoration(color: palette.line, borderRadius: BorderRadius.circular(20)))),
-                  const SizedBox(height: 20),
-                  Row(children: [
-                    KofeRoundIcon(icon: Icons.open_in_new_rounded),
-                    const SizedBox(width: 12),
-                    Expanded(child: Text('Оплата открыта в ЮKassa', style: Theme.of(context).textTheme.headlineMedium)),
-                  ]),
-                  const SizedBox(height: 12),
-                  Text(message, style: TextStyle(color: palette.inkMuted, height: 1.4)),
-                  const SizedBox(height: 18),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      onPressed: checking
-                          ? null
-                          : () async {
-                              setSheetState(() => checking = true);
-                              try {
-                                final status = await ref.read(apiProvider).refreshYooKassaPayment(orderId);
-                                if (status.isPaid) {
-                                  if (sheetContext.mounted) Navigator.of(sheetContext).pop(true);
-                                  return;
-                                }
-                                setSheetState(() {
-                                  message = status.paymentStatus == 'canceled'
-                                      ? 'Платёж отменён в ЮKassa. Вы можете вернуться в корзину и попробовать снова.'
-                                      : 'ЮKassa пока не подтвердила платёж. Если вы только что оплатили, подождите несколько секунд и проверьте ещё раз.';
-                                });
-                              } on ApiException catch (error) {
-                                setSheetState(() => message = 'Не удалось проверить статус: ${error.message}');
-                              } finally {
-                                if (sheetContext.mounted) setSheetState(() => checking = false);
-                              }
-                            },
-                      icon: checking
-                          ? const SizedBox.square(dimension: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                          : const Icon(Icons.refresh_rounded),
-                      label: Text(checking ? 'Проверяем…' : 'Проверить оплату'),
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  TextButton(
-                    onPressed: () => Navigator.of(sheetContext).pop(false),
-                    child: const Center(child: Text('Вернусь позже')),
-                  ),
-                ],
-              ),
-            ),
-          );
-        },
-      ),
+      builder: (_) => _PaymentReturnSheet(orderId: orderId),
     );
   }
 
@@ -415,6 +361,182 @@ class _CartScreenState extends ConsumerState<CartScreen> {
       ),
     );
     controller.dispose();
+  }
+}
+
+class _PaymentReturnSheet extends ConsumerStatefulWidget {
+  const _PaymentReturnSheet({required this.orderId});
+
+  final String orderId;
+
+  @override
+  ConsumerState<_PaymentReturnSheet> createState() => _PaymentReturnSheetState();
+}
+
+class _PaymentReturnSheetState extends ConsumerState<_PaymentReturnSheet>
+    with WidgetsBindingObserver {
+  static const _retryDelay = Duration(seconds: 2);
+  static const _automaticChecksAfterReturn = 4;
+
+  bool _checking = false;
+  bool _leftForPayment = false;
+  int _remainingAutomaticChecks = _automaticChecksAfterReturn;
+  Timer? _retryTimer;
+  String _message =
+      'После оплаты вернитесь в приложение — статус обновится автоматически. '
+      'Обычно это занимает несколько секунд.';
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    _retryTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    switch (state) {
+      case AppLifecycleState.inactive:
+      case AppLifecycleState.paused:
+        _leftForPayment = true;
+        break;
+      case AppLifecycleState.resumed:
+        if (_leftForPayment) {
+          _leftForPayment = false;
+          _remainingAutomaticChecks = _automaticChecksAfterReturn;
+          _retryTimer?.cancel();
+          unawaited(_runAutomaticChecks());
+        }
+        break;
+      case AppLifecycleState.detached:
+      case AppLifecycleState.hidden:
+        break;
+    }
+  }
+
+  Future<void> _runAutomaticChecks() async {
+    final terminal = await _refreshPayment(automatic: true);
+    if (!mounted || terminal) return;
+
+    if (_remainingAutomaticChecks == 0) {
+      setState(() {
+        _message =
+            'Платёж пока не подтверждён. Нажмите «Проверить сейчас» чуть позже — '
+            'заказ не будет создан повторно.';
+      });
+      return;
+    }
+
+    _remainingAutomaticChecks -= 1;
+    _retryTimer = Timer(_retryDelay, () => unawaited(_runAutomaticChecks()));
+  }
+
+  Future<bool> _refreshPayment({required bool automatic}) async {
+    if (_checking) return false;
+
+    setState(() {
+      _checking = true;
+      if (automatic) _message = 'Проверяем оплату в ЮKassa…';
+    });
+    try {
+      final status = await ref.read(apiProvider).refreshYooKassaPayment(widget.orderId);
+      if (!mounted) return true;
+
+      if (status.isPaid) {
+        _retryTimer?.cancel();
+        Navigator.of(context).pop(true);
+        return true;
+      }
+
+      final canceled = status.paymentStatus == 'canceled';
+      setState(() {
+        _message = canceled
+            ? 'Платёж отменён в ЮKassa. Вы можете вернуться в корзину и попробовать снова.'
+            : automatic
+            ? 'Платёж ещё обрабатывается. Проверим статус автоматически ещё раз.'
+            : 'ЮKassa пока не подтвердила платёж. Подождите несколько секунд и попробуйте снова.';
+      });
+      return canceled;
+    } on ApiException catch (error) {
+      if (mounted) {
+        setState(() {
+          _message = automatic
+              ? 'Не удалось получить статус, попробуем ещё раз автоматически.'
+              : 'Не удалось проверить статус: ${error.message}';
+        });
+      }
+      return false;
+    } finally {
+      if (mounted) setState(() => _checking = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.kofePalette;
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 38,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: palette.line,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                KofeRoundIcon(icon: Icons.open_in_new_rounded),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Оплата открыта в ЮKassa',
+                    style: Theme.of(context).textTheme.headlineMedium,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(_message, style: TextStyle(color: palette.inkMuted, height: 1.4)),
+            const SizedBox(height: 18),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: _checking
+                    ? null
+                    : () => unawaited(_refreshPayment(automatic: false)),
+                icon: _checking
+                    ? const SizedBox.square(
+                        dimension: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.refresh_rounded),
+                label: Text(_checking ? 'Проверяем…' : 'Проверить сейчас'),
+              ),
+            ),
+            const SizedBox(height: 4),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Center(child: Text('Вернусь позже')),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
