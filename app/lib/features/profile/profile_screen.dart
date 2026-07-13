@@ -39,7 +39,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     final session = ref.watch(sessionProvider);
     final ordersAsync = ref.watch(ordersProvider);
     final lastOrder = ordersAsync.maybeWhen(
-      data: (orders) => orders.isEmpty ? null : orders.first,
+      data: (orders) {
+        for (final order in orders) {
+          if (order.status.isHistoryOrder) return order;
+        }
+        return null;
+      },
       orElse: () => null,
     );
     final orderDateFmt = DateFormat('dd.MM, HH:mm');

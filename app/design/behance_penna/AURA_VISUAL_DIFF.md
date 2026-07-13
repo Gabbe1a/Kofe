@@ -14,6 +14,10 @@
   persisted locally and exposed in Profile → Theme.
 - First launch now has a distinct welcome CTA; existing saved installations
   skip it and retain their current city/venue flow.
+- Active orders are separated from history: a persistent compact card above
+  the bottom navigation opens a live order screen. Its vertical tracker uses a
+  visible «Сейчас» label, larger current stage, completed checkmarks and muted
+  future stages; `issued` removes the live card and returns the order to history.
 
 ## Intentional differences
 
@@ -25,3 +29,6 @@
 - No visual device run was performed in this pass because Flutter/Dart commands
   are intentionally excluded. Manual review remains required at 375×812,
   390×844 and a narrow Android viewport.
+- The new active-order bar and tracker were reviewed structurally for wrapping
+  and flexible width, but still require the same manual device pass for final
+  height and keyboard/safe-area confirmation.

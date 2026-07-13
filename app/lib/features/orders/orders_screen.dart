@@ -28,7 +28,7 @@ class OrdersScreen extends ConsumerWidget {
         title: const Text('История заказов'),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18),
-          onPressed: () => context.pop(),
+          onPressed: () => context.canPop() ? context.pop() : context.go('/menu'),
         ),
       ),
       body: SafeArea(
@@ -43,10 +43,13 @@ class OrdersScreen extends ConsumerWidget {
             ),
           ),
           data: (orders) {
-            if (orders.isEmpty) {
+            final historyOrders = orders
+                .where((order) => order.status.isHistoryOrder)
+                .toList();
+            if (historyOrders.isEmpty) {
               return const Center(
                 child: Text(
-                  'Заказов пока нет',
+                  'История пока пуста',
                   style: TextStyle(color: AppColors.inkMuted),
                 ),
               );
@@ -56,10 +59,10 @@ class OrdersScreen extends ConsumerWidget {
                 : null;
             return ListView.separated(
               padding: const EdgeInsets.only(top: 8, bottom: 24),
-              itemCount: orders.length,
+              itemCount: historyOrders.length,
               separatorBuilder: (_, _) => const SizedBox(height: 12),
               itemBuilder: (context, i) {
-                final order = orders[i];
+                final order = historyOrders[i];
                 final cancelled = order.status.isCancelled;
                 final summary = order.summaryLine ?? 'Заказ';
 
@@ -188,9 +191,14 @@ class OrdersScreen extends ConsumerWidget {
 }
 
 class OrderDetailScreen extends ConsumerStatefulWidget {
-  const OrderDetailScreen({super.key, required this.orderId});
+  const OrderDetailScreen({
+    super.key,
+    required this.orderId,
+    this.activeMode = false,
+  });
 
   final String orderId;
+  final bool activeMode;
 
   @override
   ConsumerState<OrderDetailScreen> createState() => _OrderDetailScreenState();
@@ -198,8 +206,9 @@ class OrderDetailScreen extends ConsumerStatefulWidget {
 
 class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen>
     with WidgetsBindingObserver {
-  static const _refreshInterval = Duration(seconds: 10);
+  static const _refreshInterval = Duration(seconds: 5);
   Timer? _refreshTimer;
+  bool _historyRedirectScheduled = false;
 
   @override
   void initState() {
@@ -223,6 +232,24 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen>
 
   void _refreshOrder() => ref.invalidate(orderProvider(widget.orderId));
 
+  void _openHistoryWhenFinished() {
+    if (_historyRedirectScheduled) return;
+    _historyRedirectScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref.invalidate(ordersProvider);
+      context.go('/orders');
+    });
+  }
+
+  void _closeOrder() {
+    if (context.canPop()) {
+      context.pop();
+    } else {
+      context.go('/menu');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final orderAsync = ref.watch(orderProvider(widget.orderId));
@@ -239,7 +266,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen>
         appBar: AppBar(
           leading: IconButton(
             icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18),
-            onPressed: () => context.pop(),
+            onPressed: _closeOrder,
           ),
         ),
         body: Center(
@@ -280,14 +307,17 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen>
         final orderStatus = order.status;
         final isCancelled = orderStatus.isCancelled;
         final activeTimelineStep = orderStatus.timelineStep;
+        if (widget.activeMode && orderStatus.isHistoryOrder) {
+          _openHistoryWhenFinished();
+        }
 
         return Scaffold(
           backgroundColor: Theme.of(context).scaffoldBackgroundColor,
           appBar: AppBar(
-            title: Text('Заказ № ${order.id}'),
+            title: Text(widget.activeMode ? 'Активный заказ' : 'Заказ № ${order.id}'),
             leading: IconButton(
               icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18),
-              onPressed: () => context.pop(),
+              onPressed: _closeOrder,
             ),
           ),
           body: SafeArea(
@@ -320,7 +350,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen>
                       ),
                       if (activeTimelineStep != null) ...[
                         const SizedBox(height: 18),
-                        _OrderTimeline(activeStep: activeTimelineStep),
+                        _OrderProgressTracker(activeStep: activeTimelineStep),
                       ],
                     ],
                   ),
@@ -471,25 +501,33 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen>
                   ),
                 ),
                 const SizedBox(height: 20),
-                if (product != null)
+                if (widget.activeMode)
+                  ElevatedButton.icon(
+                    onPressed: () => context.go('/menu'),
+                    icon: const Icon(Icons.storefront_outlined),
+                    label: const Text('Вернуться в меню'),
+                  )
+                else if (product != null)
                   ElevatedButton.icon(
                     onPressed: () => context.push('/product/${product!.id}'),
                     icon: const Icon(Icons.replay_rounded),
                     label: const Text('Повторить заказ'),
                   ),
-                const SizedBox(height: 8),
-                Center(
-                  child: TextButton(
-                    onPressed: () => _openReview(context),
-                    child: const Text(
-                      'Оставить отзыв',
-                      style: TextStyle(
-                        color: AppColors.forest,
-                        fontWeight: FontWeight.w700,
+                if (!widget.activeMode) ...[
+                  const SizedBox(height: 8),
+                  Center(
+                    child: TextButton(
+                      onPressed: () => _openReview(context),
+                      child: const Text(
+                        'Оставить отзыв',
+                        style: TextStyle(
+                          color: AppColors.forest,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                     ),
                   ),
-                ),
+                ],
               ],
             ),
           ),
@@ -627,74 +665,165 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen>
   }
 }
 
-class _OrderTimeline extends StatelessWidget {
-  const _OrderTimeline({required this.activeStep});
+class _OrderProgressTracker extends StatelessWidget {
+  const _OrderProgressTracker({required this.activeStep});
 
   final int activeStep;
 
   static const _steps = [
-    ('Подтвержден', Icons.check_rounded),
-    ('Готовится', Icons.coffee_maker_outlined),
-    ('Приготовлен', Icons.local_cafe_outlined),
-    ('Выдан', Icons.storefront_outlined),
+    ('Подтверждён', 'Кофейня приняла заказ', Icons.receipt_long_outlined),
+    ('Готовится', 'Бариста готовит напитки', Icons.coffee_maker_outlined),
+    ('Приготовлен', 'Можно забрать на точке', Icons.local_cafe_outlined),
+    ('Выдан', 'Заказ передан вам', Icons.storefront_outlined),
   ];
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.kofePalette;
+    return Column(
+      children: [
+        for (var index = 0; index < _steps.length; index++) ...[
+          _OrderProgressStep(
+            title: _steps[index].$1,
+            subtitle: _steps[index].$2,
+            icon: _steps[index].$3,
+            isCompleted: index < activeStep,
+            isCurrent: index == activeStep,
+          ),
+          if (index < _steps.length - 1)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Container(
+                width: 2,
+                height: 14,
+                margin: const EdgeInsets.only(left: 20),
+                color: index < activeStep ? palette.action : palette.line,
+              ),
+            ),
+        ],
+      ],
+    );
+  }
+}
+
+class _OrderProgressStep extends StatelessWidget {
+  const _OrderProgressStep({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.isCompleted,
+    required this.isCurrent,
+  });
+
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final bool isCompleted;
+  final bool isCurrent;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.kofePalette;
+    final circleColor = isCompleted
+        ? palette.action
+        : isCurrent
+        ? palette.accent
+        : palette.surface;
+    final circleIconColor = isCompleted
+        ? palette.onAction
+        : isCurrent
+        ? palette.onAccent
+        : palette.inkMuted;
+
     return Row(
-      children: List.generate(_steps.length * 2 - 1, (i) {
-        if (i.isOdd) {
-          final after = i ~/ 2;
-          final done = after < activeStep;
-          return Expanded(
-            child: Container(
-              height: 2,
-              color: done
-                  ? AppColors.forest
-                  : AppColors.ink.withValues(alpha: 0.12),
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Container(
+          width: 42,
+          height: 42,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: circleColor,
+            border: Border.all(
+              color: isCurrent
+                  ? palette.action
+                  : isCompleted
+                  ? palette.action
+                  : palette.line,
+              width: isCurrent ? 2.5 : 1.25,
             ),
-          );
-        }
-        final step = i ~/ 2;
-        final done = step <= activeStep;
-        final active = step == activeStep;
-        return Column(
-          children: [
-            Container(
-              width: 28,
-              height: 28,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: done ? AppColors.forest : AppColors.surface,
-                border: Border.all(
-                  color: done
-                      ? AppColors.forest
-                      : AppColors.ink.withValues(alpha: 0.2),
-                  width: active ? 3 : 1.5,
+          ),
+          child: Icon(
+            isCompleted ? Icons.check_rounded : icon,
+            size: 20,
+            color: circleIconColor,
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 220),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+            decoration: BoxDecoration(
+              color: isCurrent
+                  ? palette.accent.withValues(alpha: 0.32)
+                  : Colors.transparent,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: isCurrent ? palette.accent : Colors.transparent,
+              ),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: TextStyle(
+                          color: isCurrent || isCompleted
+                              ? palette.ink
+                              : palette.inkMuted,
+                          fontSize: isCurrent ? 16 : 15,
+                          fontWeight: isCurrent ? FontWeight.w800 : FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle,
+                        style: TextStyle(
+                          color: palette.inkMuted,
+                          fontSize: 12,
+                          height: 1.25,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              child: Icon(
-                _steps[step].$2,
-                size: 14,
-                color: done ? AppColors.cream : AppColors.inkMuted,
-              ),
+                if (isCurrent) ...[
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: palette.action,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      'Сейчас',
+                      style: TextStyle(
+                        color: palette.onAction,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
             ),
-            const SizedBox(height: 6),
-            SizedBox(
-              width: 64,
-              child: Text(
-                _steps[step].$1,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 10,
-                  color: done ? AppColors.forest : AppColors.inkMuted,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ],
-        );
-      }),
+          ),
+        ),
+      ],
     );
   }
 }

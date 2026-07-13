@@ -47,8 +47,22 @@ extension OrderStatusPresentation on String {
     _ => false,
   };
 
+  bool get isActiveOrder => switch (_normalized) {
+    'new' || 'confirmed' || 'preparing' || 'ready' => true,
+    _ => false,
+  };
+
+  /// Orders leave the live tracker only after completion, cancellation or an
+  /// unrecoverable payment result. Unknown future statuses stay visible in
+  /// history instead of silently disappearing from the customer UI.
+  bool get isHistoryOrder => switch (_normalized) {
+    'pending_payment' || 'awaiting_payment' || 'payment_pending' => false,
+    'new' || 'confirmed' || 'preparing' || 'ready' => false,
+    _ => true,
+  };
+
   int? get timelineStep => switch (_normalized) {
-    'confirmed' => 0,
+    'new' || 'confirmed' => 0,
     'preparing' => 1,
     'ready' => 2,
     'issued' || 'completed' || 'done' || 'fulfilled' || 'выполнен' => 3,
@@ -58,6 +72,7 @@ extension OrderStatusPresentation on String {
   String get detailHeadline => switch (_normalized) {
     'pending_payment' || 'awaiting_payment' || 'payment_pending' => 'Ожидаем оплату',
     'payment_failed' || 'failed' => 'Оплата не прошла',
+    'new' => 'Заказ принят',
     'confirmed' => 'Заказ подтверждён',
     'preparing' => 'Готовим ваш заказ',
     'ready' => 'Заказ готов — можно забирать',

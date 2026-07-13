@@ -209,7 +209,7 @@ class _CartScreenState extends ConsumerState<CartScreen> {
         _pendingCartFingerprint = null;
         ref.read(cartProvider.notifier).clear();
         ref.invalidate(ordersProvider);
-        if (mounted) context.go('/orders/$orderId');
+        if (mounted) context.go('/active-order/$orderId');
       }
     } on ApiException catch (error) {
       if (mounted) {
