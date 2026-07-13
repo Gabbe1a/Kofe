@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/data_providers.dart';
+import '../../core/order_status.dart';
 import '../../core/providers.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/kofe_surface.dart';
@@ -95,7 +96,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
                                       Text(
-                                        '${orderDateFmt.format(lastOrder.createdAt)} · ${lastOrder.status}',
+                                        '${orderDateFmt.format(lastOrder.createdAt)} · ${lastOrder.status.localized}',
                                         style: const TextStyle(
                                           color: AppColors.inkMuted,
                                           fontSize: 12,

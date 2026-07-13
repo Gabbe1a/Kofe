@@ -5,6 +5,7 @@ import 'core/providers.dart';
 import 'core/router/app_router.dart';
 import 'core/storage/local_store.dart';
 import 'core/theme/app_theme.dart';
+import 'core/widgets/order_status_sync.dart';
 import 'data/api/kofe_api.dart';
 import 'core/config/app_config.dart';
 
@@ -34,17 +35,19 @@ class KofeMamaApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final router = ref.watch(routerProvider);
     final preference = ref.watch(sessionProvider.select((s) => s.themePreference));
-    return MaterialApp.router(
-      title: 'Кофе Мама',
-      debugShowCheckedModeBanner: false,
-      theme: AppTheme.light(),
-      darkTheme: AppTheme.dark(),
-      themeMode: switch (preference) {
-        ThemePreference.light => ThemeMode.light,
-        ThemePreference.dark => ThemeMode.dark,
-        ThemePreference.system => ThemeMode.system,
-      },
-      routerConfig: router,
+    return OrderStatusSync(
+      child: MaterialApp.router(
+        title: 'Кофе Мама',
+        debugShowCheckedModeBanner: false,
+        theme: AppTheme.light(),
+        darkTheme: AppTheme.dark(),
+        themeMode: switch (preference) {
+          ThemePreference.light => ThemeMode.light,
+          ThemePreference.dark => ThemeMode.dark,
+          ThemePreference.system => ThemeMode.system,
+        },
+        routerConfig: router,
+      ),
     );
   }
 }

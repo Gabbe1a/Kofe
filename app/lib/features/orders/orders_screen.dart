@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/data_providers.dart';
+import '../../core/order_status.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/kofe_surface.dart';
 import '../../core/widgets/product_image.dart';
@@ -57,7 +60,7 @@ class OrdersScreen extends ConsumerWidget {
               separatorBuilder: (_, _) => const SizedBox(height: 12),
               itemBuilder: (context, i) {
                 final order = orders[i];
-                final cancelled = order.status.toLowerCase().contains('отмен');
+                final cancelled = order.status.isCancelled;
                 final summary = order.summaryLine ?? 'Заказ';
 
                 return KofeSurface(
@@ -102,7 +105,7 @@ class OrdersScreen extends ConsumerWidget {
                                 ),
                                 const SizedBox(width: 4),
                                 Text(
-                                  order.status,
+                                  order.status.localized,
                                   style: TextStyle(
                                     color: cancelled
                                         ? AppColors.danger
@@ -184,14 +187,45 @@ class OrdersScreen extends ConsumerWidget {
   }
 }
 
-class OrderDetailScreen extends ConsumerWidget {
+class OrderDetailScreen extends ConsumerStatefulWidget {
   const OrderDetailScreen({super.key, required this.orderId});
 
   final String orderId;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final orderAsync = ref.watch(orderProvider(orderId));
+  ConsumerState<OrderDetailScreen> createState() => _OrderDetailScreenState();
+}
+
+class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen>
+    with WidgetsBindingObserver {
+  static const _refreshInterval = Duration(seconds: 10);
+  Timer? _refreshTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _refreshOrder());
+    _refreshTimer = Timer.periodic(_refreshInterval, (_) => _refreshOrder());
+  }
+
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _refreshOrder();
+  }
+
+  void _refreshOrder() => ref.invalidate(orderProvider(widget.orderId));
+
+  @override
+  Widget build(BuildContext context) {
+    final orderAsync = ref.watch(orderProvider(widget.orderId));
     final productsAsync = ref.watch(productsProvider(null));
     final venuesAsync = ref.watch(venuesProvider(null));
 
@@ -243,6 +277,9 @@ class OrderDetailScreen extends ConsumerWidget {
         }
         venue ??= allVenues.isNotEmpty ? allVenues.first : null;
         final venueName = venue?.shortName ?? 'Кофейня';
+        final orderStatus = order.status;
+        final isCancelled = orderStatus.isCancelled;
+        final activeTimelineStep = orderStatus.timelineStep;
 
         return Scaffold(
           backgroundColor: Theme.of(context).scaffoldBackgroundColor,
@@ -264,22 +301,27 @@ class OrderDetailScreen extends ConsumerWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        order.status == 'Выполнен'
-                            ? 'Выполнен'
-                            : 'Будет готов через 15 мин',
-                        style: const TextStyle(
-                          color: AppColors.forest,
+                        orderStatus.detailHeadline,
+                        style: TextStyle(
+                          color: isCancelled ? AppColors.danger : AppColors.forest,
                           fontWeight: FontWeight.w800,
                           fontSize: 20,
                         ),
                       ),
                       const SizedBox(height: 4),
-                      const Text(
-                        'Самовывоз',
-                        style: TextStyle(color: AppColors.inkMuted, fontSize: 13),
+                      Text(
+                        isCancelled
+                            ? 'Этот заказ не будет приготовлен'
+                            : 'Самовывоз',
+                        style: const TextStyle(
+                          color: AppColors.inkMuted,
+                          fontSize: 13,
+                        ),
                       ),
-                      const SizedBox(height: 18),
-                      const _OrderTimeline(activeStep: 3),
+                      if (activeTimelineStep != null) ...[
+                        const SizedBox(height: 18),
+                        _OrderTimeline(activeStep: activeTimelineStep),
+                      ],
                     ],
                   ),
                 ),
