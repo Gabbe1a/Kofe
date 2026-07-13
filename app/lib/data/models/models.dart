@@ -176,6 +176,7 @@ class AppNotification {
 class OrderSummary {
   const OrderSummary({
     required this.id,
+    this.number,
     required this.status,
     required this.total,
     required this.createdAt,
@@ -184,8 +185,10 @@ class OrderSummary {
     this.paymentTotal,
     this.bonusSpent = 0,
     this.bonusEarned = 0,
+    this.items = const [],
   });
   final String id;
+  final int? number;
   final String status;
   final double total;
   final DateTime createdAt;
@@ -194,6 +197,51 @@ class OrderSummary {
   final double? paymentTotal;
   final int bonusSpent;
   final int bonusEarned;
+  final List<OrderItemSummary> items;
+
+  String get displayNumber => number?.toString() ?? (id.length <= 8 ? id : id.substring(0, 8));
+}
+
+class OrderItemModifierSummary {
+  const OrderItemModifierSummary({
+    required this.groupId,
+    required this.groupTitle,
+    required this.optionId,
+    required this.optionTitle,
+    required this.priceDelta,
+  });
+
+  final String? groupId;
+  final String groupTitle;
+  final String? optionId;
+  final String optionTitle;
+  final double priceDelta;
+}
+
+class OrderItemSummary {
+  const OrderItemSummary({
+    required this.productId,
+    required this.title,
+    required this.qty,
+    required this.unitPrice,
+    required this.lineTotal,
+    this.sizeId,
+    this.sizeLabel,
+    this.sizeMl,
+    this.sizePriceDelta = 0,
+    this.modifiers = const [],
+  });
+
+  final String? productId;
+  final String title;
+  final int qty;
+  final double unitPrice;
+  final double lineTotal;
+  final String? sizeId;
+  final String? sizeLabel;
+  final int? sizeMl;
+  final double sizePriceDelta;
+  final List<OrderItemModifierSummary> modifiers;
 }
 
 /// Minimal response returned when the server has created an order ready for

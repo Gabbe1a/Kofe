@@ -10,9 +10,11 @@ import secrets
 import time
 import uuid
 from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal, ROUND_DOWN
 from pathlib import Path
 from typing import Any, Iterator
+from zoneinfo import ZoneInfo
 
 import psycopg
 from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, UploadFile
@@ -27,8 +29,10 @@ if not DATABASE_URL:
     raise RuntimeError("DATABASE_URL must be configured through the runtime environment")
 MEDIA_BASE_URL = os.environ.get('MEDIA_BASE_URL', '').rstrip('/')
 STAFF_TOKEN_SECRET = os.environ.get('STAFF_TOKEN_SECRET', '')
+VENUE_TIMEZONE = ZoneInfo(os.environ.get('VENUE_TIMEZONE', 'Europe/Moscow'))
+PREOPEN_ORDER_WINDOW = timedelta(minutes=20)
 
-app = FastAPI(title="Kofe Mama API", version="0.1.0")
+app = FastAPI(title="Кофе API", version="0.1.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -119,7 +123,7 @@ class QuoteRequest(BaseModel):
 class CreateOrderRequest(QuoteRequest):
     address_confirmed: bool
     comment: str | None = Field(default=None, max_length=500)
-    pickup_at: str | None = None
+    pickup_at: datetime | None = None
     idempotency_key: str = Field(min_length=8, max_length=128)
     user_id: str = 'u_demo'  # replaced by the authenticated subject in phase 2 auth.
 
@@ -374,6 +378,114 @@ def assert_staff_venue_access(conn: psycopg.Connection, staff: dict[str, Any], v
         raise HTTPException(status_code=403, detail='No access to this venue')
 
 
+_DAY_INDEX = {'пн': 0, 'вт': 1, 'ср': 2, 'чт': 3, 'пт': 4, 'сб': 5, 'вс': 6}
+
+
+def _days_include(days_label: str, weekday: int) -> bool:
+    normalized = days_label.strip().lower().replace('–', '-').replace('—', '-').replace(' ', '')
+    if normalized in {'ежедневно', 'каждыйдень'}:
+        return True
+    for token in normalized.replace(';', ',').replace('/', ',').split(','):
+        if not token:
+            continue
+        if '-' not in token:
+            if _DAY_INDEX.get(token) == weekday:
+                return True
+            continue
+        start_name, end_name = token.split('-', 1)
+        start = _DAY_INDEX.get(start_name)
+        end = _DAY_INDEX.get(end_name)
+        if start is None or end is None:
+            continue
+        valid_days = set(range(start, end + 1)) if start <= end else set(range(start, 7)) | set(range(0, end + 1))
+        if weekday in valid_days:
+            return True
+    return False
+
+
+def _clock(value: str) -> tuple[int, int]:
+    try:
+        hour, minute = (int(part) for part in value.strip().split(':', 1))
+    except (TypeError, ValueError) as error:
+        raise HTTPException(status_code=503, detail='У точки неверно настроены часы работы') from error
+    if not 0 <= hour <= 23 or not 0 <= minute <= 59:
+        raise HTTPException(status_code=503, detail='У точки неверно настроены часы работы')
+    return hour, minute
+
+
+def _venue_windows(conn: psycopg.Connection, venue_id: str, day: datetime) -> list[tuple[datetime, datetime]]:
+    rows = conn.execute(
+        '''SELECT days_label, open_time, close_time
+           FROM venue_hours WHERE venue_id = %s ORDER BY sort_order, id''',
+        (venue_id,),
+    ).fetchall()
+    windows: list[tuple[datetime, datetime]] = []
+    for row in rows:
+        if not _days_include(row['days_label'], day.weekday()):
+            continue
+        open_hour, open_minute = _clock(row['open_time'])
+        close_hour, close_minute = _clock(row['close_time'])
+        opens = day.replace(hour=open_hour, minute=open_minute, second=0, microsecond=0)
+        closes = day.replace(hour=close_hour, minute=close_minute, second=0, microsecond=0)
+        if closes <= opens:
+            closes += timedelta(days=1)
+        windows.append((opens, closes))
+    return windows
+
+
+def _validate_order_time(
+    conn: psycopg.Connection,
+    venue_id: str,
+    pickup_at: datetime | None,
+) -> None:
+    now = datetime.now(timezone.utc).astimezone(VENUE_TIMEZONE)
+    settings = conn.execute(
+        'SELECT default_cook_minutes FROM venue_settings WHERE venue_id = %s',
+        (venue_id,),
+    ).fetchone()
+    cook_minutes = int(settings['default_cook_minutes']) if settings else 15
+    today_windows = _venue_windows(conn, venue_id, now)
+    current_window = next((window for window in today_windows if window[0] <= now < window[1]), None)
+    upcoming_window = next((window for window in today_windows if now < window[0]), None)
+    preopen_window = (
+        upcoming_window
+        if upcoming_window and upcoming_window[0] - now <= PREOPEN_ORDER_WINDOW
+        else None
+    )
+
+    if current_window is None and preopen_window is None:
+        if upcoming_window:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Точка закрыта. Заказы откроются в {upcoming_window[0].strftime('%H:%M')}",
+            )
+        raise HTTPException(status_code=409, detail='Точка уже закрыта. Выберите другую точку или оформите заказ завтра')
+
+    if pickup_at is None:
+        if preopen_window:
+            earliest = preopen_window[0] + timedelta(minutes=cook_minutes)
+            raise HTTPException(
+                status_code=409,
+                detail=f"Точка откроется в {preopen_window[0].strftime('%H:%M')}. Выберите получение не раньше {earliest.strftime('%H:%M')}",
+            )
+        assert current_window is not None
+        if now + timedelta(minutes=cook_minutes) > current_window[1]:
+            raise HTTPException(status_code=409, detail='До закрытия точка уже не успеет приготовить заказ')
+        return
+
+    pickup = pickup_at.astimezone(VENUE_TIMEZONE)
+    target_windows = _venue_windows(conn, venue_id, pickup)
+    target_window = next((window for window in target_windows if window[0] <= pickup <= window[1]), None)
+    if target_window is None:
+        raise HTTPException(status_code=422, detail='Выбранное время получения находится вне часов работы точки')
+    earliest = max(now + timedelta(minutes=cook_minutes), target_window[0] + timedelta(minutes=cook_minutes))
+    if pickup < earliest:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Заказ можно получить не раньше {earliest.strftime('%H:%M')}",
+        )
+
+
 def _quote(conn: psycopg.Connection, payload: QuoteRequest) -> dict[str, Any]:
     venue = conn.execute('SELECT id FROM venues WHERE id = %s AND is_active = TRUE', (payload.venue_id,)).fetchone()
     if not venue:
@@ -400,14 +512,22 @@ def _quote(conn: psycopg.Connection, payload: QuoteRequest) -> dict[str, Any]:
         if not product:
             raise HTTPException(status_code=409, detail=f'Product unavailable: {requested.product_id}')
 
+        size_id: str | None = None
+        size_label: str | None = None
+        size_ml: int | None = None
         size_delta = 0.0
         if requested.size_id:
             size = conn.execute(
-                'SELECT price_delta FROM product_sizes WHERE product_id = %s AND id = %s AND is_active = TRUE',
+                '''SELECT id, label, ml, price_delta
+                   FROM product_sizes
+                   WHERE product_id = %s AND id = %s AND is_active = TRUE''',
                 (product['id'], requested.size_id),
             ).fetchone()
             if not size:
                 raise HTTPException(status_code=422, detail='Unknown size')
+            size_id = size['id']
+            size_label = size['label']
+            size_ml = size['ml']
             size_delta = money(size['price_delta'])
 
         groups = conn.execute(
@@ -429,7 +549,9 @@ def _quote(conn: psycopg.Connection, payload: QuoteRequest) -> dict[str, Any]:
             if not group:
                 raise HTTPException(status_code=422, detail='Modifier does not belong to product')
             option = conn.execute(
-                '''SELECT o.id, o.title, COALESCE(vo.price_delta, o.price_delta) AS price_delta
+                '''SELECT o.id, o.title,
+                          CASE WHEN o.group_id = 'syrup' THEN 0
+                               ELSE COALESCE(vo.price_delta, o.price_delta) END AS price_delta
                    FROM modifier_options o
                    LEFT JOIN venue_modifier_option_overrides vo
                      ON vo.group_id = o.group_id AND vo.option_id = o.id AND vo.venue_id = %s
@@ -448,6 +570,8 @@ def _quote(conn: psycopg.Connection, payload: QuoteRequest) -> dict[str, Any]:
         subtotal += line_total
         lines.append({
             'productId': product['id'], 'title': product['title'], 'qty': requested.qty,
+            'sizeId': size_id, 'sizeLabel': size_label, 'sizeMl': size_ml,
+            'sizePriceDelta': size_delta,
             'unitPrice': unit_price, 'lineTotal': line_total, 'modifiers': selected,
         })
 
@@ -665,7 +789,10 @@ def persist_yookassa_state(remote: dict[str, Any]) -> str:
             if order['status'] == 'pending_payment':
                 conn.execute(
                     '''UPDATE orders SET status = 'confirmed', paid_at = NOW(), updated_at = NOW(),
-                       ready_estimate_at = NOW() + (%s * INTERVAL '1 minute') WHERE id = %s''',
+                       ready_estimate_at = COALESCE(
+                         pickup_at,
+                         NOW() + (%s * INTERVAL '1 minute')
+                       ) WHERE id = %s''',
                     (cook_minutes, order_id),
                 )
                 conn.execute(
@@ -830,7 +957,10 @@ def _load_product(conn: psycopg.Connection, product_id: str, venue_id: str | Non
             continue
         opts = conn.execute(
             """
-            SELECT o.id, o.title, COALESCE(vo.price_delta, o.price_delta) AS price_delta, o.is_default
+            SELECT o.id, o.title,
+                   CASE WHEN o.group_id = 'syrup' THEN 0
+                        ELSE COALESCE(vo.price_delta, o.price_delta) END AS price_delta,
+                   o.is_default
             FROM modifier_options o
             LEFT JOIN venue_modifier_option_overrides vo
               ON vo.group_id = o.group_id AND vo.option_id = o.id AND vo.venue_id = %s
@@ -971,6 +1101,19 @@ def staff_login(payload: StaffLoginRequest) -> dict[str, Any]:
 @app.get('/admin/session')
 def admin_session(staff: dict[str, Any] = Depends(current_staff)) -> dict[str, Any]:
     return {'id': staff['id'], 'email': staff['email'], 'role': staff['role']}
+
+
+@app.get('/admin/config')
+def admin_client_config(
+    staff: dict[str, Any] = Depends(staff_guard('admin', 'manager')),
+) -> dict[str, Any]:
+    """Return browser-side integrations available to authenticated Staff Web.
+
+    A JavaScript Maps API key is necessarily visible to the browser. It must be
+    restricted to the admin origin in the Yandex developer dashboard and is
+    never returned by public mobile endpoints.
+    """
+    return {'yandexMapsApiKey': os.environ.get('YANDEX_MAPS_API_KEY', '')}
 
 
 @app.get('/admin/products')
@@ -1162,13 +1305,14 @@ def set_venue_product_override(venue_id: str, product_id: str, payload: VenuePro
 
 @app.put('/admin/venues/{venue_id}/modifier-options/{group_id}/{option_id}/override')
 def set_venue_modifier_override(venue_id: str, group_id: str, option_id: str, payload: VenueModifierOverrideInput, staff: dict[str, Any] = Depends(staff_guard('admin', 'manager'))) -> dict[str, Any]:
+    price_delta = Decimal('0') if group_id == 'syrup' else payload.price_delta
     with db() as conn:
         assert_staff_venue_access(conn, staff, venue_id)
         if not conn.execute('SELECT 1 FROM modifier_options WHERE group_id = %s AND id = %s', (group_id, option_id)).fetchone():
             raise HTTPException(status_code=404, detail='Modifier option not found')
         conn.execute('''INSERT INTO venue_modifier_option_overrides (venue_id,group_id,option_id,is_available,price_delta) VALUES (%s,%s,%s,%s,%s)
-          ON CONFLICT (venue_id,group_id,option_id) DO UPDATE SET is_available=EXCLUDED.is_available,price_delta=EXCLUDED.price_delta,updated_at=NOW()''', (venue_id,group_id,option_id,payload.is_available,payload.price_delta))
-    return {'venueId':venue_id,'groupId':group_id,'optionId':option_id,'isAvailable':payload.is_available,'priceDelta':payload.price_delta}
+          ON CONFLICT (venue_id,group_id,option_id) DO UPDATE SET is_available=EXCLUDED.is_available,price_delta=EXCLUDED.price_delta,updated_at=NOW()''', (venue_id,group_id,option_id,payload.is_available,price_delta))
+    return {'venueId':venue_id,'groupId':group_id,'optionId':option_id,'isAvailable':payload.is_available,'priceDelta':money(price_delta)}
 
 
 @app.delete('/admin/venues/{venue_id}/products/{product_id}/override')
@@ -1229,7 +1373,8 @@ def admin_venue_menu(venue_id: str, staff: dict[str, Any] = Depends(staff_guard(
                 LEFT JOIN product_stop_list sl ON sl.venue_id = %s AND sl.product_id = p.id
                 ORDER BY p.sort_order, p.title''', (venue_id, venue_id)).fetchall()
         options = conn.execute('''SELECT g.id AS group_id, g.title AS group_title, o.id, o.title,
-                    o.price_delta AS base_price_delta, vo.price_delta AS override_price_delta,
+                    CASE WHEN g.id = 'syrup' THEN 0 ELSE o.price_delta END AS base_price_delta,
+                    CASE WHEN g.id = 'syrup' THEN 0 ELSE vo.price_delta END AS override_price_delta,
                     vo.is_available AS override_available
                 FROM modifier_groups g JOIN modifier_options o ON o.group_id = g.id
                 LEFT JOIN venue_modifier_option_overrides vo
@@ -1266,24 +1411,47 @@ def admin_orders(
         if status:
             clauses.append('o.status = %s'); params.append(status)
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ''
-        rows = conn.execute(f'''SELECT o.id, o.venue_id, v.short_name, o.status, o.total, o.created_at,
-                    o.ready_estimate_at, o.comment, o.summary_line
-                FROM orders o JOIN venues v ON v.id = o.venue_id {where}
+        rows = conn.execute(f'''SELECT o.id, o.public_number, o.venue_id, v.short_name, v.full_address,
+                    o.status, o.total, o.created_at,
+                    o.pickup_at, o.ready_estimate_at, o.comment, o.promo_code, o.summary_line,
+                    COALESCE(settings.default_cook_minutes, 15) AS cook_minutes
+                FROM orders o
+                JOIN venues v ON v.id = o.venue_id
+                LEFT JOIN venue_settings settings ON settings.venue_id = o.venue_id
+                {where}
                 ORDER BY o.created_at DESC LIMIT 200''', params).fetchall()
         result = []
         for row in rows:
-            items = conn.execute('''SELECT title_snapshot, qty, unit_price, line_total
-                                    FROM order_items WHERE order_id = %s ORDER BY id''', (row['id'],)).fetchall()
-            result.append({'id': row['id'], 'venueId': row['venue_id'], 'venueTitle': row['short_name'],
+            items = _order_items_payload(conn, row['id'])
+            events = conn.execute(
+                '''SELECT from_status, to_status, actor_type, created_at
+                   FROM order_status_events
+                   WHERE order_id = %s ORDER BY created_at''',
+                (row['id'],),
+            ).fetchall()
+            start_by = (
+                row['pickup_at'] - timedelta(minutes=row['cook_minutes'])
+                if row['pickup_at'] else None
+            )
+            result.append({'id': row['id'], 'number': row['public_number'], 'venueId': row['venue_id'],
+                           'venueTitle': row['short_name'], 'venueAddress': row['full_address'],
                            'status': row['status'], 'total': money(row['total']), 'createdAt': row['created_at'].isoformat(),
+                           'pickupAt': row['pickup_at'].isoformat() if row['pickup_at'] else None,
+                           'startByAt': start_by.isoformat() if start_by else None,
+                           'cookMinutes': row['cook_minutes'],
                            'readyEstimateAt': row['ready_estimate_at'].isoformat() if row['ready_estimate_at'] else None,
-                           'comment': row['comment'], 'summaryLine': row['summary_line'],
-                           'items': [{'title': i['title_snapshot'], 'qty': i['qty'], 'unitPrice': money(i['unit_price']), 'lineTotal': money(i['line_total'])} for i in items]})
+                           'comment': row['comment'], 'promoCode': row['promo_code'], 'summaryLine': row['summary_line'],
+                           'items': items,
+                           'events': [{'fromStatus': event['from_status'], 'toStatus': event['to_status'],
+                                       'actorType': event['actor_type'], 'createdAt': event['created_at'].isoformat()}
+                                      for event in events]})
     return result
 
 
 @app.get('/admin/cities')
-def admin_cities(staff: dict[str, Any] = Depends(staff_guard('admin'))) -> list[dict[str, Any]]:
+def admin_cities(
+    staff: dict[str, Any] = Depends(staff_guard('admin', 'manager')),
+) -> list[dict[str, Any]]:
     with db() as conn:
         rows = conn.execute('SELECT id, name, sort_order, is_active FROM cities ORDER BY sort_order, name').fetchall()
     return [{'id': r['id'], 'name': r['name'], 'sortOrder': r['sort_order'], 'isActive': r['is_active']} for r in rows]
@@ -1420,7 +1588,9 @@ def admin_modifier_groups(staff: dict[str, Any] = Depends(staff_guard('admin', '
         groups = conn.execute('''SELECT id,title,required,sort_order,is_active FROM modifier_groups ORDER BY sort_order,title''').fetchall()
         result = []
         for group in groups:
-            options = conn.execute('''SELECT id,title,price_delta,is_default,sort_order,is_active
+            options = conn.execute('''SELECT id,title,
+                                      CASE WHEN group_id = 'syrup' THEN 0 ELSE price_delta END AS price_delta,
+                                      is_default,sort_order,is_active
                                       FROM modifier_options WHERE group_id=%s ORDER BY sort_order,title''', (group['id'],)).fetchall()
             result.append({'id': group['id'], 'title': group['title'], 'required': group['required'], 'sortOrder': group['sort_order'], 'isActive': group['is_active'], 'options': [{'id': o['id'], 'title': o['title'], 'priceDelta': money(o['price_delta']), 'isDefault': o['is_default'], 'sortOrder': o['sort_order'], 'isActive': o['is_active']} for o in options]})
     return result
@@ -1446,11 +1616,12 @@ def update_modifier_group(group_id: str, payload: ModifierGroupAdminInput, staff
 
 @app.post('/admin/modifier-groups/{group_id}/options', status_code=201)
 def create_modifier_option(group_id: str, payload: ModifierOptionAdminInput, staff: dict[str, Any] = Depends(staff_guard('admin'))) -> dict[str, Any]:
+    price_delta = Decimal('0') if group_id == 'syrup' else payload.price_delta
     with db() as conn:
         if not conn.execute('SELECT 1 FROM modifier_groups WHERE id=%s', (group_id,)).fetchone():
             raise HTTPException(status_code=404, detail='Modifier group not found')
         conn.execute('''INSERT INTO modifier_options (group_id,id,title,price_delta,is_default,sort_order,is_active)
-                        VALUES (%s,%s,%s,%s,%s,%s,%s)''', (group_id, payload.id, payload.title, payload.price_delta, payload.is_default, payload.sort_order, payload.is_active))
+                        VALUES (%s,%s,%s,%s,%s,%s,%s)''', (group_id, payload.id, payload.title, price_delta, payload.is_default, payload.sort_order, payload.is_active))
     return {'groupId': group_id, 'id': payload.id, 'status': 'created'}
 
 
@@ -1458,9 +1629,10 @@ def create_modifier_option(group_id: str, payload: ModifierOptionAdminInput, sta
 def update_modifier_option(group_id: str, option_id: str, payload: ModifierOptionAdminInput, staff: dict[str, Any] = Depends(staff_guard('admin'))) -> dict[str, Any]:
     if option_id != payload.id:
         raise HTTPException(status_code=422, detail='Modifier option id cannot be changed')
+    price_delta = Decimal('0') if group_id == 'syrup' else payload.price_delta
     with db() as conn:
         row = conn.execute('''UPDATE modifier_options SET title=%s,price_delta=%s,is_default=%s,sort_order=%s,is_active=%s
-                              WHERE group_id=%s AND id=%s RETURNING id''', (payload.title, payload.price_delta, payload.is_default, payload.sort_order, payload.is_active, group_id, option_id)).fetchone()
+                              WHERE group_id=%s AND id=%s RETURNING id''', (payload.title, price_delta, payload.is_default, payload.sort_order, payload.is_active, group_id, option_id)).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail='Modifier option not found')
     return {'groupId': group_id, 'id': option_id, 'status': 'updated'}
@@ -1634,9 +1806,9 @@ def update_order_status(
 def admin_page() -> str:
     """Small operational UI. Its API is role-protected; no credentials are embedded."""
     return '''<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Кофе Мама — управление</title><style>
+<title>Кофе — управление</title><style>
 *{box-sizing:border-box}body{margin:0;background:#f7f2e9;color:#1a1a1a;font:16px Manrope,Arial,sans-serif}.wrap{max-width:860px;margin:0 auto;padding:32px 20px}h1{color:#1b4d3e}.card{background:#fff;border:1px solid #e8e1d6;border-radius:18px;padding:20px;margin:16px 0}.login{display:grid;gap:10px;max-width:360px}input{padding:12px;border:1px solid #c8d9cc;border-radius:10px;font:inherit}button{border:0;border-radius:10px;padding:11px 15px;background:#1b4d3e;color:#fff;font:inherit;cursor:pointer}button.secondary{background:#a8c5b0;color:#1a1a1a}.row{display:grid;grid-template-columns:1fr 110px auto;gap:12px;align-items:center;border-top:1px solid #e8e1d6;padding:12px 0}.row:first-child{border-top:0}.muted{color:#5c5c5c}.error{color:#c45c4a;min-height:24px}@media(max-width:560px){.row{grid-template-columns:1fr 90px}.row button{grid-column:1/-1}}</style></head><body><main class="wrap">
-<h1>Кофе Мама · управление меню</h1><p class="muted">Только для сотрудников. Изменения публикуются в меню выбранной точки без обновления приложения.</p>
+<h1>Кофе · управление меню</h1><p class="muted">Только для сотрудников. Изменения публикуются в меню выбранной точки без обновления приложения.</p>
 <section class="card" id="loginCard"><form class="login" id="login"><input id="email" type="email" placeholder="Email" required><input id="password" type="password" placeholder="Пароль" minlength="8" required><button>Войти</button><div id="error" class="error"></div></form></section>
 <section class="card" id="menuCard" hidden><h2>Товары</h2><div id="products"></div></section>
 </main><script>
@@ -1656,6 +1828,14 @@ def staff_web() -> FileResponse:
 def create_order(payload: CreateOrderRequest) -> dict[str, Any]:
     if not payload.address_confirmed:
         raise HTTPException(status_code=422, detail='Address confirmation is required')
+    if payload.pickup_at:
+        if payload.pickup_at.tzinfo is None:
+            raise HTTPException(status_code=422, detail='Pickup time must include timezone')
+        now = datetime.now(timezone.utc)
+        if payload.pickup_at < now + timedelta(minutes=5):
+            raise HTTPException(status_code=422, detail='Выберите время получения минимум через 5 минут')
+        if payload.pickup_at > now + timedelta(days=2):
+            raise HTTPException(status_code=422, detail='Время получения можно выбрать не более чем на 2 дня вперёд')
     with db() as conn:
         existing = conn.execute(
             '''SELECT id, status, total, payment_total, bonus_spent
@@ -1669,6 +1849,7 @@ def create_order(payload: CreateOrderRequest) -> dict[str, Any]:
                 'paymentTotal': money(existing['payment_total']),
                 'bonusSpent': int(existing['bonus_spent'] or 0),
             }
+        _validate_order_time(conn, payload.venue_id, payload.pickup_at)
         quote = _apply_loyalty(
             conn,
             _quote(conn, payload),
@@ -1681,13 +1862,13 @@ def create_order(payload: CreateOrderRequest) -> dict[str, Any]:
         conn.execute(
             '''INSERT INTO orders
                (id, user_id, venue_id, status, total, payment_total, bonus_spent,
-                subtotal, discount, summary_line, comment, promo_code,
+                subtotal, discount, summary_line, comment, promo_code, pickup_at,
                 address_confirmed, idempotency_key)
                VALUES (%s, %s, %s, 'pending_payment', %s, %s, %s, %s, %s, %s,
-                       %s, %s, TRUE, %s)''',
+                       %s, %s, %s, TRUE, %s)''',
             (order_id, payload.user_id, payload.venue_id, quote['total'], quote['paymentTotal'],
              quote['bonusSpent'], quote['subtotal'], quote['discount'], summary,
-             payload.comment, payload.promo_code, payload.idempotency_key),
+             payload.comment, payload.promo_code, payload.pickup_at, payload.idempotency_key),
         )
         if quote['bonusSpent'] > 0:
             balance_after = quote['bonusBalance'] - quote['bonusSpent']
@@ -1707,9 +1888,13 @@ def create_order(payload: CreateOrderRequest) -> dict[str, Any]:
         for line in quote['items']:
             item_id = str(uuid.uuid4())
             conn.execute(
-                '''INSERT INTO order_items (id, order_id, product_id, title_snapshot, qty, unit_price, line_total)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s)''',
-                (item_id, order_id, line['productId'], line['title'], line['qty'], line['unitPrice'], line['lineTotal']),
+                '''INSERT INTO order_items
+                   (id, order_id, product_id, title_snapshot, size_id, size_label,
+                    size_ml, size_price_delta, qty, unit_price, line_total)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)''',
+                (item_id, order_id, line['productId'], line['title'],
+                 line['sizeId'], line['sizeLabel'], line['sizeMl'], line['sizePriceDelta'],
+                 line['qty'], line['unitPrice'], line['lineTotal']),
             )
             for modifier in line['modifiers']:
                 conn.execute(
@@ -1771,7 +1956,7 @@ async def start_yookassa_payment(order_id: str, _: PaymentStartRequest) -> dict[
         'amount': {'value': f"{money(order['payment_total']):.2f}", 'currency': 'RUB'},
         'capture': True,
         'confirmation': {'type': 'redirect', 'return_url': return_url},
-        'description': f'Заказ Кофе Мама {order_id}',
+        'description': f'Заказ Кофе {order_id}',
         'metadata': {'order_id': order_id},
     }
     try:
@@ -1838,9 +2023,9 @@ async def yookassa_webhook(payload: dict[str, Any]) -> None:
 def yookassa_payment_return() -> str:
     """Neutral browser return page until the mobile app receives an App Link."""
     return '''<!doctype html><html lang="ru"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><title>Кофе Мама — оплата</title>
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Кофе — оплата</title>
 <style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#f7f2e9;color:#173d32;font:16px/1.5 Arial,sans-serif}.card{max-width:440px;margin:24px;padding:32px;border-radius:24px;background:#fff;text-align:center;box-shadow:0 14px 40px #173d3215}h1{margin:0 0 12px;font-size:26px}p{margin:0;color:#526159}.mark{width:52px;height:52px;margin:0 auto 20px;border-radius:50%;display:grid;place-items:center;background:#d7b78b;font-size:25px}</style>
-</head><body><main class="card"><div class="mark">✓</div><h1>Вернитесь в приложение</h1><p>Оплата обрабатывается ЮKassa. Откройте «Кофе Мама» — приложение проверит статус автоматически.</p></main></body></html>'''
+</head><body><main class="card"><div class="mark">✓</div><h1>Вернитесь в приложение</h1><p>Оплата обрабатывается ЮKassa. Откройте «Кофе» — приложение проверит статус автоматически.</p></main></body></html>'''
 
 
 @app.post('/orders/{order_id}/review', status_code=201)
@@ -1935,19 +2120,69 @@ def me() -> dict[str, Any]:
     }
 
 
+def _order_items_payload(
+    conn: psycopg.Connection,
+    order_id: str,
+) -> list[dict[str, Any]]:
+    items = conn.execute(
+        '''SELECT id, product_id, title_snapshot, size_id, size_label, size_ml,
+                  size_price_delta, qty, unit_price, line_total
+           FROM order_items
+           WHERE order_id = %s
+           ORDER BY id''',
+        (order_id,),
+    ).fetchall()
+    item_ids = [item['id'] for item in items]
+    modifiers_by_item: dict[str, list[dict[str, Any]]] = {
+        item_id: [] for item_id in item_ids
+    }
+    if item_ids:
+        modifiers = conn.execute(
+            '''SELECT order_item_id, group_id, group_title, option_id,
+                      option_title, price_delta
+               FROM order_item_modifiers
+               WHERE order_item_id = ANY(%s)
+               ORDER BY id''',
+            (item_ids,),
+        ).fetchall()
+        for modifier in modifiers:
+            modifiers_by_item[modifier['order_item_id']].append({
+                'groupId': modifier['group_id'],
+                'groupTitle': modifier['group_title'],
+                'optionId': modifier['option_id'],
+                'optionTitle': modifier['option_title'],
+                'priceDelta': money(modifier['price_delta']),
+            })
+    return [{
+        'productId': item['product_id'],
+        'title': item['title_snapshot'],
+        'sizeId': item['size_id'],
+        'sizeLabel': item['size_label'],
+        'sizeMl': item['size_ml'],
+        'sizePriceDelta': money(item['size_price_delta']),
+        'qty': item['qty'],
+        'unitPrice': money(item['unit_price']),
+        'lineTotal': money(item['line_total']),
+        'modifiers': modifiers_by_item[item['id']],
+    } for item in items]
+
+
 @app.get("/orders")
 def orders() -> list[dict[str, Any]]:
     with db() as conn:
         rows = conn.execute(
             """
-            SELECT id, status, total, payment_total, bonus_spent, bonus_earned,
+            SELECT id, public_number, status, total, payment_total, bonus_spent, bonus_earned,
                    created_at, summary_line, venue_id
-            FROM orders ORDER BY created_at DESC
+            FROM orders
+            WHERE user_id = 'u_demo'
+            ORDER BY created_at DESC
             """
         ).fetchall()
     return [
         {
             "id": r["id"],
+            "number": r["public_number"],
             "status": r["status"],
             "total": money(r["total"]),
             "paymentTotal": money(r["payment_total"]),
@@ -1966,25 +2201,28 @@ def order(order_id: str) -> dict[str, Any]:
     with db() as conn:
         r = conn.execute(
             """
-            SELECT id, status, total, payment_total, bonus_spent, bonus_earned,
+            SELECT id, public_number, status, total, payment_total, bonus_spent, bonus_earned,
                    created_at, summary_line, venue_id
-            FROM orders WHERE id = %s
+            FROM orders WHERE id = %s AND user_id = 'u_demo'
             """,
             (order_id,),
         ).fetchone()
-    if not r:
-        raise HTTPException(status_code=404, detail="Order not found")
-    return {
-        "id": r["id"],
-        "status": r["status"],
-        "total": money(r["total"]),
-        "paymentTotal": money(r["payment_total"]),
-        "bonusSpent": int(r["bonus_spent"] or 0),
-        "bonusEarned": int(r["bonus_earned"] or 0),
-        "createdAt": r["created_at"].isoformat(),
-        "summaryLine": r["summary_line"],
-        "venueId": r["venue_id"],
-    }
+        if not r:
+            raise HTTPException(status_code=404, detail="Order not found")
+        items = _order_items_payload(conn, order_id)
+        return {
+            "id": r["id"],
+            "number": r["public_number"],
+            "status": r["status"],
+            "total": money(r["total"]),
+            "paymentTotal": money(r["payment_total"]),
+            "bonusSpent": int(r["bonus_spent"] or 0),
+            "bonusEarned": int(r["bonus_earned"] or 0),
+            "createdAt": r["created_at"].isoformat(),
+            "summaryLine": r["summary_line"],
+            "venueId": r["venue_id"],
+            "items": items,
+        }
 
 
 @app.get('/orders/{order_id}/payment-status')

@@ -84,7 +84,7 @@ class _TransitSplash extends StatelessWidget {
               child: Icon(Icons.local_cafe_rounded, color: palette.canvas, size: 32),
             ),
             const SizedBox(height: 14),
-            Text('КОФЕ МАМА', style: Theme.of(context).textTheme.titleLarge),
+            Text('КОФЕ', style: Theme.of(context).textTheme.titleLarge),
           ],
         ),
       ),
@@ -134,7 +134,7 @@ class _WelcomeScreen extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
-                    'КОФЕ МАМА',
+                    'КОФЕ',
                     style: TextStyle(
                       color: Color(0xFFF4F4F4),
                       fontWeight: FontWeight.w800,

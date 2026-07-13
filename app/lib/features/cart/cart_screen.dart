@@ -73,10 +73,8 @@ class _CartScreenState extends ConsumerState<CartScreen> {
                 const SizedBox(height: 24),
                 const Text('Получение и оплата', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18)),
                 const SizedBox(height: 12),
-                KofeSurface(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-                  child: Column(
-                    children: [
+                Column(
+                  children: [
                       _CheckoutRow(
                         icon: Icons.location_on_outlined,
                         title: session.venue?.shortName ?? 'Точка не выбрана',
@@ -126,8 +124,7 @@ class _CartScreenState extends ConsumerState<CartScreen> {
                         onTap: () => context.push('/payment'),
                         showDivider: false,
                       ),
-                    ],
-                  ),
+                  ],
                 ),
               ],
             ),
@@ -529,8 +526,10 @@ class _CartScreenState extends ConsumerState<CartScreen> {
   static String _timeLabel(DateTime value) => 'Заберу в ${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
 
   static Future<void> _pickupSheet(BuildContext context, WidgetRef ref) async {
-    var later = ref.read(cartProvider).pickupAt != null;
-    TimeOfDay selected = TimeOfDay.now().replacing(minute: 0);
+    final savedPickup = ref.read(cartProvider).pickupAt;
+    var later = savedPickup != null;
+    final initialDate = savedPickup ?? DateTime.now().add(const Duration(minutes: 15));
+    TimeOfDay selected = TimeOfDay.fromDateTime(initialDate);
     await showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -560,9 +559,19 @@ class _CartScreenState extends ConsumerState<CartScreen> {
                   child: ElevatedButton(
                     onPressed: () {
                       final now = DateTime.now();
-                      ref.read(cartProvider.notifier).setPickup(later
+                      final pickup = later
                           ? DateTime(now.year, now.month, now.day, selected.hour, selected.minute)
-                          : null);
+                          : null;
+                      if (pickup != null &&
+                          pickup.isBefore(now.add(const Duration(minutes: 5)))) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Выберите время минимум через 5 минут.'),
+                          ),
+                        );
+                        return;
+                      }
+                      ref.read(cartProvider.notifier).setPickup(pickup);
                       Navigator.pop(context);
                     },
                     child: const Text('Готово'),
@@ -1098,39 +1107,37 @@ class _SuggestionRail extends StatelessWidget {
     if (products.isEmpty) return const SizedBox.shrink();
     final palette = context.kofePalette;
     return SizedBox(
-      height: 158,
+      height: 174,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: products.length,
-        separatorBuilder: (_, _) => const SizedBox(width: 10),
+        separatorBuilder: (_, _) => const SizedBox(width: 12),
         itemBuilder: (context, index) {
           final product = products[index];
           return SizedBox(
-            width: 132,
+            width: 148,
             child: Material(
-              color: palette.surface,
+              color: Colors.transparent,
               borderRadius: BorderRadius.circular(12),
               child: InkWell(
                 onTap: () => context.push('/product/${product.id}'),
                 borderRadius: BorderRadius.circular(12),
-                child: Padding(
-                  padding: const EdgeInsets.all(9),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: Container(
-                          width: double.infinity,
-                          decoration: BoxDecoration(color: palette.imageBackdrop, borderRadius: BorderRadius.circular(9)),
-                          child: ProductImage(asset: product.imageAsset),
-                        ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Container(
+                        width: double.infinity,
+                        decoration: BoxDecoration(color: palette.imageBackdrop, borderRadius: BorderRadius.circular(12)),
+                        clipBehavior: Clip.antiAlias,
+                        child: ProductImage(asset: product.imageAsset),
                       ),
-                      const SizedBox(height: 8),
-                      Text(product.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
-                      const SizedBox(height: 3),
-                      Text('+ ${product.price.toStringAsFixed(0)} ₽', style: TextStyle(color: palette.inkMuted, fontSize: 12, fontWeight: FontWeight.w700)),
-                    ],
-                  ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(product.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800)),
+                    const SizedBox(height: 3),
+                    Text('+ ${product.price.toStringAsFixed(0)} ₽', style: TextStyle(color: palette.inkMuted, fontSize: 12, fontWeight: FontWeight.w700)),
+                  ],
                 ),
               ),
             ),

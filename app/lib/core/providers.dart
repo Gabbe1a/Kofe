@@ -54,6 +54,11 @@ class SessionNotifier extends StateNotifier<SessionState> {
     _persist();
   }
 
+  void setNotificationsEnabled(bool enabled) {
+    state = state.copyWith(notificationsEnabled: enabled);
+    _persist();
+  }
+
   void login(UserProfile user) {
     state = state.copyWith(isAuthed: true, user: user);
     _persist();

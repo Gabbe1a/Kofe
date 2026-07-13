@@ -117,9 +117,9 @@ abstract final class MockData {
       title: 'Выберите сироп',
       required: false,
       options: const [
-        ModifierOption(id: 'banana', title: 'Банан', priceDelta: 40),
-        ModifierOption(id: 'vanilla', title: 'Ваниль', priceDelta: 40),
-        ModifierOption(id: 'caramel', title: 'Карамель', priceDelta: 40),
+        ModifierOption(id: 'banana', title: 'Банан'),
+        ModifierOption(id: 'vanilla', title: 'Ваниль'),
+        ModifierOption(id: 'caramel', title: 'Карамель'),
         ModifierOption(id: 'coconut', title: 'Кокос', priceDelta: 40),
         ModifierOption(id: 'cherry', title: 'Вишня', priceDelta: 40),
       ],
@@ -132,7 +132,7 @@ abstract final class MockData {
       categoryId: 'signature_cold',
       title: 'Карамельный фраппучино',
       description:
-          'Холодный кофе со взбитыми сливками и карамельным топпингом. Фирменный вкус «Кофе Мама».',
+          'Холодный кофе со взбитыми сливками и карамельным топпингом. Фирменный вкус «Кофе».',
       price: 349,
       imageAsset: 'assets/images/products/caramel_frappe_cutout.png',
       weightLabel: '400 мл',
@@ -272,7 +272,7 @@ abstract final class MockData {
       id: '1',
       title: 'Франшиза кофейни',
       body:
-          'Станьте партнёром сети «Кофе Мама». Форматы: остров от 1,3 млн ₽, киоск от 1,4 млн ₽, кофейня с посадкой от 2,3 млн ₽.',
+          'Станьте партнёром сети «Кофе». Форматы: остров от 1,3 млн ₽, киоск от 1,4 млн ₽, кофейня с посадкой от 2,3 млн ₽.',
       ctaUrl: 'https://forms.gle/wswAJZ7mwcumbE5e7',
       imageAsset: 'assets/images/promo/promo_01.png',
     ),

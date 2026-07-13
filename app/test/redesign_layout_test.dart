@@ -95,7 +95,7 @@ void main() {
         ),
       ),
     );
-    expect(find.text('КОФЕ МАМА'), findsOneWidget);
+    expect(find.text('КОФЕ'), findsOneWidget);
     await tester.pump(const Duration(milliseconds: 1700));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);

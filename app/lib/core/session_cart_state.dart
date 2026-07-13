@@ -25,6 +25,7 @@ class SessionState {
     this.saveComment = false,
     this.hasSeenWelcome = false,
     this.themePreference = ThemePreference.system,
+    this.notificationsEnabled = true,
   });
 
   final String? cityId;
@@ -38,6 +39,7 @@ class SessionState {
   final bool saveComment;
   final bool hasSeenWelcome;
   final ThemePreference themePreference;
+  final bool notificationsEnabled;
 
   SessionState copyWith({
     String? cityId,
@@ -54,6 +56,7 @@ class SessionState {
     bool? saveComment,
     bool? hasSeenWelcome,
     ThemePreference? themePreference,
+    bool? notificationsEnabled,
   }) {
     return SessionState(
       cityId: clearCity ? null : (cityId ?? this.cityId),
@@ -67,6 +70,7 @@ class SessionState {
       saveComment: saveComment ?? this.saveComment,
       hasSeenWelcome: hasSeenWelcome ?? this.hasSeenWelcome,
       themePreference: themePreference ?? this.themePreference,
+      notificationsEnabled: notificationsEnabled ?? this.notificationsEnabled,
     );
   }
 }

@@ -1,4 +1,4 @@
-# Кофе Мама
+# Кофе
 
 <p align="center">
   <img src="docs/assets/kofe-mama-cover.png" alt="Холодный кофейный напиток на песочном фоне" width="100%" />

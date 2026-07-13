@@ -46,7 +46,7 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
             CustomScrollView(
               slivers: [
                 SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(20, 14, 20, 132),
+                  padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
                   sliver: SliverList(
                     delegate: SliverChildListDelegate([
                       _TopBar(
@@ -80,16 +80,24 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
                         ),
                       ),
                       const SizedBox(height: 16),
-                      categoriesAsync.when(
-                        loading: () => const SizedBox(height: 38),
-                        error: (_, _) => const SizedBox.shrink(),
-                        data: (categories) => _CategoryRail(
-                          categories: categories,
-                          selectedId: _categoryId,
-                          onSelect: (id) => setState(() => _categoryId = id),
-                        ),
-                      ),
-                      const SizedBox(height: 24),
+                    ]),
+                  ),
+                ),
+                SliverToBoxAdapter(
+                  child: categoriesAsync.when(
+                    loading: () => const SizedBox(height: 38),
+                    error: (_, _) => const SizedBox.shrink(),
+                    data: (categories) => _CategoryRail(
+                      categories: categories,
+                      selectedId: _categoryId,
+                      onSelect: (id) => setState(() => _categoryId = id),
+                    ),
+                  ),
+                ),
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(20, 24, 20, 132),
+                  sliver: SliverList(
+                    delegate: SliverChildListDelegate([
                       productsAsync.when(
                         loading: () => const Padding(
                           padding: EdgeInsets.only(top: 80),
@@ -98,7 +106,11 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
                         error: (error, _) => _MenuMessage(
                           icon: Icons.wifi_off_rounded,
                           title: 'Не удалось загрузить меню',
-                          message: '$error',
+                          message: 'Соединение прервалось. Попробуйте ещё раз.',
+                          onRetry: () {
+                            ref.invalidate(categoriesProvider);
+                            ref.invalidate(productsProvider(_categoryId));
+                          },
                         ),
                         data: (products) {
                           final visible = products.where(_matchesQuery).toList();
@@ -221,6 +233,7 @@ class _CategoryRail extends StatelessWidget {
     return SizedBox(
       height: 38,
       child: ListView.separated(
+        padding: const EdgeInsets.symmetric(horizontal: 20),
         scrollDirection: Axis.horizontal,
         itemCount: categories.length + 1,
         separatorBuilder: (_, _) => const SizedBox(width: 8),
@@ -264,7 +277,7 @@ class _ProductTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.kofePalette;
     return KofeSurface(
-      padding: const EdgeInsets.fromLTRB(10, 10, 10, 12),
+      padding: const EdgeInsets.fromLTRB(5, 5, 5, 12),
       onTap: () => context.push('/product/${product.id}'),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -277,28 +290,36 @@ class _ProductTile extends StatelessWidget {
                 color: palette.imageBackdrop,
                 borderRadius: BorderRadius.circular(9),
               ),
-              padding: const EdgeInsets.all(8),
-              child: ProductImage(asset: product.imageAsset),
+              clipBehavior: Clip.antiAlias,
+              child: SizedBox.expand(
+                child: ProductImage(asset: product.imageAsset),
+              ),
             ),
           ),
           const SizedBox(height: 10),
-          Text(
-            product.title,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(color: palette.ink, fontSize: 14, height: 1.15, fontWeight: FontWeight.w800),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 5),
+            child: Text(
+              product.title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: palette.ink, fontSize: 14, height: 1.15, fontWeight: FontWeight.w800),
+            ),
           ),
           const SizedBox(height: 6),
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  '${product.price.toStringAsFixed(0)} ₽',
-                  style: TextStyle(color: palette.ink, fontSize: 17, fontWeight: FontWeight.w800),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 5),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '${product.price.toStringAsFixed(0)} ₽',
+                    style: TextStyle(color: palette.ink, fontSize: 17, fontWeight: FontWeight.w800),
+                  ),
                 ),
-              ),
-              KofeAddButton(onTap: () => context.push('/product/${product.id}'), size: 34),
-            ],
+                KofeAddButton(onTap: () => context.push('/product/${product.id}'), size: 34),
+              ],
+            ),
           ),
         ],
       ),
@@ -344,11 +365,17 @@ class _FloatingCart extends StatelessWidget {
 }
 
 class _MenuMessage extends StatelessWidget {
-  const _MenuMessage({required this.icon, required this.title, required this.message});
+  const _MenuMessage({
+    required this.icon,
+    required this.title,
+    required this.message,
+    this.onRetry,
+  });
 
   final IconData icon;
   final String title;
   final String message;
+  final VoidCallback? onRetry;
 
   @override
   Widget build(BuildContext context) {
@@ -362,6 +389,14 @@ class _MenuMessage extends StatelessWidget {
           Text(title, style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 6),
           Text(message, textAlign: TextAlign.center, style: TextStyle(color: palette.inkMuted)),
+          if (onRetry != null) ...[
+            const SizedBox(height: 18),
+            OutlinedButton.icon(
+              onPressed: onRetry,
+              icon: const Icon(Icons.refresh_rounded),
+              label: const Text('Повторить'),
+            ),
+          ],
         ],
       ),
     );

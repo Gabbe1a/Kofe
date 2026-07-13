@@ -95,11 +95,8 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
           padding: const EdgeInsets.only(bottom: 100),
           children: [
             const SizedBox(height: 8),
-            KofeSurface(
-              radius: 24,
-              padding: const EdgeInsets.all(18),
-              child: Column(
-                children: [
+            Column(
+              children: [
                   TextField(
                     controller: _name,
                     decoration: fieldDecoration('Имя *'),
@@ -131,17 +128,16 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
                       child: Row(
                         children: [
                           Expanded(child: Text(birthLabel)),
-                          const Icon(
+                          Icon(
                             Icons.calendar_today_outlined,
                             size: 18,
-                            color: AppColors.forest,
+                            color: palette.ink,
                           ),
                         ],
                       ),
                     ),
                   ),
-                ],
-              ),
+              ],
             ),
           ],
         ),

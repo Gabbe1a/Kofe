@@ -175,12 +175,17 @@ abstract final class AppTheme {
         behavior: SnackBarBehavior.floating,
       ),
       switchTheme: SwitchThemeData(
-        thumbColor: WidgetStateProperty.all(palette.surface),
+        thumbColor: WidgetStateProperty.resolveWith(
+          (states) => states.contains(WidgetState.selected)
+              ? palette.onAction
+              : palette.inkMuted,
+        ),
         trackColor: WidgetStateProperty.resolveWith(
           (states) => states.contains(WidgetState.selected)
-              ? palette.ink
-              : palette.line,
+              ? palette.action
+              : palette.surfaceMuted,
         ),
+        trackOutlineColor: WidgetStateProperty.all(Colors.transparent),
       ),
       extensions: [palette],
     );

@@ -9,11 +9,11 @@ SET title = EXCLUDED.title,
 
 INSERT INTO modifier_options (id, group_id, title, price_delta, is_default)
 VALUES
-  ('banana', 'syrup', 'Банан', 40, false),
-  ('vanilla', 'syrup', 'Ваниль', 40, false),
-  ('caramel', 'syrup', 'Карамель', 40, false),
-  ('coconut', 'syrup', 'Кокос', 40, false),
-  ('cherry', 'syrup', 'Вишня', 40, false)
+  ('banana', 'syrup', 'Банан', 0, false),
+  ('vanilla', 'syrup', 'Ваниль', 0, false),
+  ('caramel', 'syrup', 'Карамель', 0, false),
+  ('coconut', 'syrup', 'Кокос', 0, false),
+  ('cherry', 'syrup', 'Вишня', 0, false)
 ON CONFLICT (group_id, id) DO UPDATE
 SET title = EXCLUDED.title,
     price_delta = EXCLUDED.price_delta,

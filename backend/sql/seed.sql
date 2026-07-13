@@ -45,15 +45,15 @@ INSERT INTO modifier_options (id, group_id, title, price_delta, is_default) VALU
   ('banana', 'milk', 'Молоко банановое', 79, false),
   ('regular', 'milk', 'Молоко', 0, true),
   ('pistachio', 'milk', 'Молоко фисташковое', 79, false),
-  ('banana', 'syrup', 'Банан', 40, false),
-  ('vanilla', 'syrup', 'Ваниль', 40, false),
-  ('caramel', 'syrup', 'Карамель', 40, false),
-  ('coconut', 'syrup', 'Кокос', 40, false),
-  ('cherry', 'syrup', 'Вишня', 40, false);
+  ('banana', 'syrup', 'Банан', 0, false),
+  ('vanilla', 'syrup', 'Ваниль', 0, false),
+  ('caramel', 'syrup', 'Карамель', 0, false),
+  ('coconut', 'syrup', 'Кокос', 0, false),
+  ('cherry', 'syrup', 'Вишня', 0, false);
 
 INSERT INTO products (id, category_id, title, description, price, image_asset, weight_label, featured, weight_g, proteins, fats, carbs, kcal) VALUES
   ('p_caramel', 'signature_cold', 'Карамельный фраппучино',
-   'Холодный кофе со взбитыми сливками и карамельным топпингом. Фирменный вкус «Кофе Мама».',
+   'Холодный кофе со взбитыми сливками и карамельным топпингом. Фирменный вкус «Кофе».',
    349, 'assets/images/products/caramel_frappe_cutout.png', '400 мл', true, 400, 2.1, 8.4, 42, 248),
   ('p_bottle', 'signature_cold', 'Айс-латте в бутылке',
    'Холодный латте со слоями молока и эспрессо. Удобно взять с собой.',
@@ -113,7 +113,7 @@ INSERT INTO product_modifier_groups (product_id, group_id) VALUES
 
 INSERT INTO promo_slides (id, title, body, cta_url, image_asset, sort_order) VALUES
   ('1', 'Франшиза кофейни',
-   'Станьте партнёром сети «Кофе Мама». Форматы: остров от 1,3 млн ₽, киоск от 1,4 млн ₽, кофейня с посадкой от 2,3 млн ₽.',
+   'Станьте партнёром сети «Кофе». Форматы: остров от 1,3 млн ₽, киоск от 1,4 млн ₽, кофейня с посадкой от 2,3 млн ₽.',
    'https://forms.gle/wswAJZ7mwcumbE5e7', 'assets/images/promo/promo_01.png', 1),
   ('2', '100 баллов за сторис',
    'Купите напиток, отметьте @coffee_mama_rus в сторис, отправьте скрин в VK — получите 100 бонусов. До 3 раз в неделю.',

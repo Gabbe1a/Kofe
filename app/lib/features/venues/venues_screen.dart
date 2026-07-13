@@ -20,7 +20,6 @@ class VenuesScreen extends ConsumerStatefulWidget {
 }
 
 class _VenuesScreenState extends ConsumerState<VenuesScreen> {
-  final _listKey = GlobalKey();
   YandexMapController? _mapController;
 
   static const _mockDistances = [
@@ -98,6 +97,7 @@ class _VenuesScreenState extends ConsumerState<VenuesScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.kofePalette;
     final session = ref.watch(sessionProvider);
     final cityId = session.cityId ?? 'rnd';
     final venuesAsync = ref.watch(venuesProvider(cityId));
@@ -126,21 +126,21 @@ class _VenuesScreenState extends ConsumerState<VenuesScreen> {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(
+                Icon(
                   Icons.location_on_rounded,
                   size: 20,
-                  color: AppColors.ink,
+                  color: palette.ink,
                 ),
                 const SizedBox(width: 4),
                 Text(
                   cityName,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontWeight: FontWeight.w700,
-                    color: AppColors.ink,
+                    color: palette.ink,
                   ),
                 ),
                 const SizedBox(width: 4),
-                const Icon(Icons.expand_more, size: 22, color: AppColors.ink),
+                Icon(Icons.expand_more, size: 22, color: palette.ink),
               ],
             ),
           ),
@@ -156,7 +156,7 @@ class _VenuesScreenState extends ConsumerState<VenuesScreen> {
             child: Text(
               'Ошибка загрузки точек\n$e',
               textAlign: TextAlign.center,
-              style: const TextStyle(color: AppColors.inkMuted),
+              style: TextStyle(color: palette.inkMuted),
             ),
           ),
           data: (venues) => _buildBody(context, session, venues),
@@ -170,6 +170,7 @@ class _VenuesScreenState extends ConsumerState<VenuesScreen> {
     SessionState session,
     List<Venue> venues,
   ) {
+    final palette = context.kofePalette;
     Venue? selected;
     for (final v in venues) {
       if (v.id == session.venueId) {
@@ -178,8 +179,8 @@ class _VenuesScreenState extends ConsumerState<VenuesScreen> {
       }
     }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 24),
       children: [
         const SizedBox(height: 4),
         const _FulfillmentSwitcher(),
@@ -191,14 +192,17 @@ class _VenuesScreenState extends ConsumerState<VenuesScreen> {
             child: Stack(
               children: [
                 Positioned.fill(
-                  child: VenueMap(
-                    venues: venues,
-                    selectedId: session.venueId,
-                    height: 260,
-                    borderRadius: 0,
-                    showExpandHint: false,
-                    onControllerReady: (c) => _mapController = c,
-                    onSelect: (id) => _selectVenue(context, venues, id),
+                  child: IgnorePointer(
+                    child: VenueMap(
+                      venues: venues,
+                      selectedId: session.venueId,
+                      height: 260,
+                      borderRadius: 0,
+                      showExpandHint: false,
+                      interactive: false,
+                      onControllerReady: (c) => _mapController = c,
+                      onSelect: (id) => _selectVenue(context, venues, id),
+                    ),
                   ),
                 ),
                 Positioned(
@@ -243,21 +247,24 @@ class _VenuesScreenState extends ConsumerState<VenuesScreen> {
           ),
         ),
         const SizedBox(height: 18),
-        const Text(
+        Text(
           'Ближайшие кофейни',
           style: TextStyle(
             fontSize: 24,
             fontWeight: FontWeight.w600,
-            color: AppColors.ink,
+            color: palette.ink,
           ),
         ),
         const SizedBox(height: 10),
-        Expanded(
-          child: ListView.separated(
-            key: _listKey,
-            padding: const EdgeInsets.only(bottom: 24),
+        ListView.separated(
+            padding: EdgeInsets.zero,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
             itemCount: venues.length,
-            separatorBuilder: (_, _) => const SizedBox(height: 10),
+            separatorBuilder: (_, _) => Divider(
+              height: 1,
+              color: Theme.of(context).dividerColor.withValues(alpha: 0.45),
+            ),
             itemBuilder: (context, i) {
               final v = venues[i];
               final isSelected = session.venueId == v.id;
@@ -266,11 +273,8 @@ class _VenuesScreenState extends ConsumerState<VenuesScreen> {
                   ? 'Часы уточняйте'
                   : '${v.hours.first.open} – ${v.hours.first.close}';
               return KofeSurface(
-                color: isSelected ? AppColors.surface : AppColors.creamWarm,
-                borderColor: isSelected
-                    ? AppColors.forest.withValues(alpha: 0.12)
-                    : null,
-                padding: const EdgeInsets.fromLTRB(14, 14, 10, 14),
+                color: Colors.transparent,
+                padding: const EdgeInsets.fromLTRB(0, 16, 0, 16),
                 onTap: () => _selectVenue(context, venues, v.id),
                 child: Stack(
                   children: [
@@ -282,7 +286,7 @@ class _VenuesScreenState extends ConsumerState<VenuesScreen> {
                         child: Container(
                           width: 4,
                           decoration: BoxDecoration(
-                            color: AppColors.forestDeep,
+                            color: palette.action,
                             borderRadius: BorderRadius.circular(999),
                           ),
                         ),
@@ -295,20 +299,20 @@ class _VenuesScreenState extends ConsumerState<VenuesScreen> {
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
                             color: isSelected
-                                ? AppColors.forestDeep
+                                ? palette.action
                                 : Colors.transparent,
                             border: Border.all(
                               color: isSelected
-                                  ? AppColors.forestDeep
-                                  : AppColors.inkMuted.withValues(alpha: 0.35),
+                                  ? palette.action
+                                  : palette.inkMuted.withValues(alpha: 0.45),
                               width: 2,
                             ),
                           ),
                           child: isSelected
-                              ? const Icon(
+                              ? Icon(
                                   Icons.check_rounded,
                                   size: 14,
-                                  color: AppColors.cream,
+                                  color: palette.onAction,
                                 )
                               : null,
                         ),
@@ -328,16 +332,16 @@ class _VenuesScreenState extends ConsumerState<VenuesScreen> {
                               const SizedBox(height: 4),
                               Row(
                                 children: [
-                                  const Icon(
+                                  Icon(
                                     Icons.schedule_rounded,
                                     size: 14,
-                                    color: AppColors.inkMuted,
+                                    color: palette.inkMuted,
                                   ),
                                   const SizedBox(width: 4),
                                   Text(
                                     hours,
-                                    style: const TextStyle(
-                                      color: AppColors.inkMuted,
+                                    style: TextStyle(
+                                      color: palette.inkMuted,
                                       fontSize: 13,
                                     ),
                                   ),
@@ -349,17 +353,13 @@ class _VenuesScreenState extends ConsumerState<VenuesScreen> {
                                   Icon(
                                     Icons.route_rounded,
                                     size: 14,
-                                    color: AppColors.forestDeep.withValues(
-                                      alpha: 0.8,
-                                    ),
+                                    color: palette.inkMuted,
                                   ),
                                   const SizedBox(width: 4),
                                   Text(
                                     distance,
                                     style: TextStyle(
-                                      color: AppColors.forestDeep.withValues(
-                                        alpha: 0.8,
-                                      ),
+                                      color: palette.inkMuted,
                                       fontSize: 13,
                                       fontWeight: FontWeight.w600,
                                     ),
@@ -370,13 +370,13 @@ class _VenuesScreenState extends ConsumerState<VenuesScreen> {
                           ),
                         ),
                         Material(
-                          color: AppColors.sageSoft.withValues(alpha: 0.35),
+                          color: palette.surfaceMuted,
                           shape: const CircleBorder(),
                           child: IconButton(
                             tooltip: 'Позвонить',
-                            icon: const Icon(
+                            icon: Icon(
                               Icons.phone_outlined,
-                              color: AppColors.forestDeep,
+                              color: palette.ink,
                             ),
                             onPressed: () {
                               final tel = v.phone.replaceAll(
@@ -393,7 +393,6 @@ class _VenuesScreenState extends ConsumerState<VenuesScreen> {
                 ),
               );
             },
-          ),
         ),
       ],
     );
@@ -425,12 +424,13 @@ class _FulfillmentSwitcher extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.kofePalette;
     return Container(
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: AppColors.searchFill,
+        color: palette.surfaceMuted,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.border),
+        border: Border.all(color: palette.line),
       ),
       child: Row(
         children: [
@@ -438,31 +438,31 @@ class _FulfillmentSwitcher extends StatelessWidget {
             child: Container(
               padding: const EdgeInsets.symmetric(vertical: 11),
               decoration: BoxDecoration(
-                color: AppColors.surface,
+                color: palette.surface,
                 borderRadius: BorderRadius.circular(12),
                 boxShadow: [
                   BoxShadow(
-                    color: AppColors.ink.withValues(alpha: 0.06),
+                    color: Colors.black.withValues(alpha: 0.08),
                     blurRadius: 8,
                     offset: const Offset(0, 2),
                   ),
                 ],
               ),
-              child: const Row(
+              child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Icon(
                     Icons.shopping_bag_outlined,
                     size: 18,
-                    color: AppColors.primary,
+                    color: palette.ink,
                   ),
-                  SizedBox(width: 8),
+                  const SizedBox(width: 8),
                   Text(
                     'С собой',
                     style: TextStyle(
                       fontWeight: FontWeight.w800,
                       fontSize: 14,
-                      color: AppColors.ink,
+                      color: palette.ink,
                     ),
                   ),
                 ],
@@ -482,23 +482,23 @@ class _FulfillmentSwitcher extends StatelessWidget {
                     ),
                   );
                 },
-                child: const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 11),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 11),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Icon(
                         Icons.delivery_dining_outlined,
                         size: 18,
-                        color: AppColors.inkMuted,
+                        color: palette.inkMuted,
                       ),
-                      SizedBox(width: 8),
+                      const SizedBox(width: 8),
                       Text(
                         'Доставка',
                         style: TextStyle(
                           fontWeight: FontWeight.w600,
                           fontSize: 14,
-                          color: AppColors.inkMuted,
+                          color: palette.inkMuted,
                         ),
                       ),
                     ],
@@ -526,17 +526,18 @@ class _MapRoundButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.kofePalette;
     return Material(
-      color: AppColors.surface,
+      color: palette.surface,
       shape: const CircleBorder(),
       elevation: 2,
-      shadowColor: AppColors.ink.withValues(alpha: 0.18),
+      shadowColor: Colors.black.withValues(alpha: 0.22),
       child: IconButton(
         tooltip: tooltip,
         onPressed: onPressed,
         constraints: const BoxConstraints.tightFor(width: 42, height: 42),
         padding: EdgeInsets.zero,
-        icon: Icon(icon, color: AppColors.ink, size: 22),
+        icon: Icon(icon, color: palette.ink, size: 22),
       ),
     );
   }
@@ -550,10 +551,11 @@ class _SelectedVenueChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.kofePalette;
     return Material(
-      color: AppColors.surface,
+      color: palette.surface,
       elevation: 3,
-      shadowColor: AppColors.ink.withValues(alpha: 0.16),
+      shadowColor: Colors.black.withValues(alpha: 0.22),
       borderRadius: BorderRadius.circular(14),
       child: InkWell(
         borderRadius: BorderRadius.circular(14),
@@ -566,12 +568,12 @@ class _SelectedVenueChip extends StatelessWidget {
                 width: 36,
                 height: 36,
                 decoration: BoxDecoration(
-                  color: AppColors.sageSoft,
+                  color: palette.surfaceMuted,
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.local_cafe_rounded,
-                  color: AppColors.primary,
+                  color: palette.ink,
                   size: 20,
                 ),
               ),
@@ -581,30 +583,30 @@ class _SelectedVenueChip extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Text(
+                    Text(
                       'Выбрано · самовывоз',
                       style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w600,
-                        color: AppColors.inkMuted,
+                        color: palette.inkMuted,
                       ),
                     ),
                     Text(
                       venue.shortName,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontWeight: FontWeight.w800,
                         fontSize: 14,
-                        color: AppColors.ink,
+                        color: palette.ink,
                       ),
                     ),
                   ],
                 ),
               ),
-              const Icon(
+              Icon(
                 Icons.fullscreen_rounded,
-                color: AppColors.inkMuted,
+                color: palette.inkMuted,
                 size: 20,
               ),
             ],
@@ -644,6 +646,7 @@ class _FullscreenVenueMapPageState
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.kofePalette;
     final selected = _selected;
     final size = MediaQuery.sizeOf(context);
     final bottomInset = MediaQuery.paddingOf(context).bottom;
@@ -684,9 +687,9 @@ class _FullscreenVenueMapPageState
                         vertical: 8,
                       ),
                       decoration: BoxDecoration(
-                        color: AppColors.surface.withValues(alpha: 0.96),
+                        color: palette.surface.withValues(alpha: 0.96),
                         borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: AppColors.border),
+                        border: Border.all(color: palette.line),
                       ),
                       child: Text(
                         '${widget.venues.length} точки',
@@ -706,9 +709,9 @@ class _FullscreenVenueMapPageState
                 right: 16,
                 bottom: 16 + bottomInset,
                 child: Material(
-                  color: AppColors.surface,
+                  color: palette.surface,
                   elevation: 6,
-                  shadowColor: AppColors.ink.withValues(alpha: 0.2),
+                  shadowColor: Colors.black.withValues(alpha: 0.25),
                   borderRadius: BorderRadius.circular(18),
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
@@ -722,12 +725,12 @@ class _FullscreenVenueMapPageState
                               width: 40,
                               height: 40,
                               decoration: BoxDecoration(
-                                color: AppColors.sageSoft,
+                                color: palette.surfaceMuted,
                                 borderRadius: BorderRadius.circular(12),
                               ),
-                              child: const Icon(
+                              child: Icon(
                                 Icons.local_cafe_rounded,
-                                color: AppColors.primary,
+                                color: palette.ink,
                               ),
                             ),
                             const SizedBox(width: 12),
@@ -747,8 +750,8 @@ class _FullscreenVenueMapPageState
                                     selected.fullAddress,
                                     maxLines: 2,
                                     overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      color: AppColors.inkMuted,
+                                    style: TextStyle(
+                                      color: palette.inkMuted,
                                       fontSize: 13,
                                     ),
                                   ),

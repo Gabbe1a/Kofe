@@ -2,10 +2,10 @@
 
 **Status: implementation complete; manual device QA pending.**
 
-- Source composition was translated into the Kofe Mama Flutter app: welcome,
+- Source composition was translated into the Kofe Flutter app: welcome,
   catalog, PDP, cart and their supporting customer flows.
 - Typography uses Manrope throughout and supports Cyrillic.
-- Product names, copy, imagery and media URLs are exclusively Kofe Mama assets.
+- Product names, copy, imagery and media URLs are exclusively Kofe assets.
 - Server data contracts, venue-level pricing and modifier logic were preserved.
 - The application now stores both first-welcome completion and a user-selected
   light/dark/system theme preference in the existing local JSON store.

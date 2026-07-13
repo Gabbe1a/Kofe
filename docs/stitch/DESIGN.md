@@ -1,8 +1,8 @@
-# Кофе Мама — Stitch design system
+# Кофе — Stitch design system
 
 ## Project brief
 
-Create a high-fidelity **mobile** UI system for the Russian coffee-chain app “Кофе Мама”. The app supports one ordering mode only: pickup (`С собой`). Do not introduce delivery, dine-in, a multi-choice fulfilment toggle, Starbucks branding, or a web dashboard.
+Create a high-fidelity **mobile** UI system for the Russian coffee-chain app “Кофе”. The app supports one ordering mode only: pickup (`С собой`). Do not introduce delivery, dine-in, a multi-choice fulfilment toggle, Starbucks branding, or a web dashboard.
 
 Design for a 375 × 812 mobile viewport with safe areas. Keep every primary action usable with one hand. UI copy must be in Russian; design instructions and component names may be in English.
 

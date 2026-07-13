@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 
 import '../../core/data_providers.dart';
 import '../../core/order_status.dart';
+import '../../core/providers.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/kofe_surface.dart';
 import '../../core/widgets/product_image.dart';
@@ -18,9 +19,9 @@ class OrdersScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final palette = context.kofePalette;
     final dateFmt = DateFormat('dd.MM.yyyy HH:mm');
     final ordersAsync = ref.watch(ordersProvider);
-    final productsAsync = ref.watch(productsProvider(null));
 
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
@@ -39,7 +40,7 @@ class OrdersScreen extends ConsumerWidget {
             child: Text(
               'Ошибка загрузки заказов\n$e',
               textAlign: TextAlign.center,
-              style: const TextStyle(color: AppColors.inkMuted),
+              style: TextStyle(color: palette.inkMuted),
             ),
           ),
           data: (orders) {
@@ -47,16 +48,13 @@ class OrdersScreen extends ConsumerWidget {
                 .where((order) => order.status.isHistoryOrder)
                 .toList();
             if (historyOrders.isEmpty) {
-              return const Center(
+              return Center(
                 child: Text(
                   'История пока пуста',
-                  style: TextStyle(color: AppColors.inkMuted),
+                  style: TextStyle(color: palette.inkMuted),
                 ),
               );
             }
-            final firstProductId = productsAsync.valueOrNull?.isNotEmpty == true
-                ? productsAsync.valueOrNull!.first.id
-                : null;
             return ListView.separated(
               padding: const EdgeInsets.only(top: 8, bottom: 24),
               itemCount: historyOrders.length,
@@ -76,7 +74,7 @@ class OrdersScreen extends ConsumerWidget {
                         children: [
                           Expanded(
                             child: Text(
-                              'Заказ № ${order.id}',
+                              'Заказ № ${order.displayNumber}',
                               style: const TextStyle(
                                 fontWeight: FontWeight.w800,
                                 fontSize: 16,
@@ -91,7 +89,7 @@ class OrdersScreen extends ConsumerWidget {
                             decoration: BoxDecoration(
                               color: cancelled
                                   ? AppColors.danger.withValues(alpha: 0.12)
-                                  : AppColors.sageSoft,
+                                  : palette.surfaceMuted,
                               borderRadius: BorderRadius.circular(20),
                             ),
                             child: Row(
@@ -104,7 +102,7 @@ class OrdersScreen extends ConsumerWidget {
                                   size: 14,
                                   color: cancelled
                                       ? AppColors.danger
-                                      : AppColors.forest,
+                                      : palette.ink,
                                 ),
                                 const SizedBox(width: 4),
                                 Text(
@@ -112,7 +110,7 @@ class OrdersScreen extends ConsumerWidget {
                                   style: TextStyle(
                                     color: cancelled
                                         ? AppColors.danger
-                                        : AppColors.forest,
+                                        : palette.ink,
                                     fontWeight: FontWeight.w700,
                                     fontSize: 12,
                                   ),
@@ -125,15 +123,15 @@ class OrdersScreen extends ConsumerWidget {
                       const SizedBox(height: 6),
                       Text(
                         dateFmt.format(order.createdAt),
-                        style: const TextStyle(
-                          color: AppColors.inkMuted,
+                        style: TextStyle(
+                          color: palette.inkMuted,
                           fontSize: 13,
                         ),
                       ),
                       const SizedBox(height: 12),
                       Divider(
                         height: 1,
-                        color: AppColors.ink.withValues(alpha: 0.08),
+                        color: palette.line,
                       ),
                       const SizedBox(height: 12),
                       Row(
@@ -141,8 +139,8 @@ class OrdersScreen extends ConsumerWidget {
                           Expanded(
                             child: Text(
                               summary,
-                              style: const TextStyle(
-                                color: AppColors.inkMuted,
+                              style: TextStyle(
+                                color: palette.inkMuted,
                                 fontSize: 13,
                               ),
                             ),
@@ -156,22 +154,40 @@ class OrdersScreen extends ConsumerWidget {
                           ),
                         ],
                       ),
-                      if (!cancelled && firstProductId != null) ...[
+                      if (!cancelled) ...[
                         const SizedBox(height: 14),
                         SizedBox(
                           width: double.infinity,
                           child: TextButton(
                             style: TextButton.styleFrom(
-                              backgroundColor: AppColors.creamWarm,
-                              foregroundColor: AppColors.ink,
+                              backgroundColor: palette.surfaceMuted,
+                              foregroundColor: palette.ink,
                               padding: const EdgeInsets.symmetric(vertical: 12),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(14),
                               ),
                             ),
-                            onPressed: () =>
-                                context.push('/product/$firstProductId'),
-                            child: const Text(
+                            onPressed: () async {
+                              try {
+                                final detailed = await ref
+                                    .read(apiProvider)
+                                    .fetchOrder(order.id);
+                                if (context.mounted) {
+                                  await _repeatOrder(context, ref, detailed);
+                                }
+                              } catch (error) {
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        'Не удалось загрузить состав заказа: $error',
+                                      ),
+                                    ),
+                                  );
+                                }
+                              }
+                            },
+                            child: Text(
                               'Повторить заказ',
                               style: TextStyle(fontWeight: FontWeight.w700),
                             ),
@@ -188,6 +204,195 @@ class OrdersScreen extends ConsumerWidget {
       ),
     );
   }
+}
+
+Future<void> _repeatOrder(
+  BuildContext context,
+  WidgetRef ref,
+  OrderSummary order,
+) async {
+  if (order.items.isEmpty || order.venueId == null) {
+    await _showRepeatProblem(
+      context,
+      'У этого старого заказа не сохранился полный состав. '
+      'Его нельзя повторить без риска выбрать другой размер или добавки.',
+    );
+    return;
+  }
+
+  final catalog = await ref
+      .read(apiProvider)
+      .fetchProducts(venueId: order.venueId);
+  final productsById = {for (final product in catalog) product.id: product};
+  final restored = <CartItem>[];
+  final problems = <String>[];
+
+  for (final historical in order.items) {
+    final product = historical.productId == null
+        ? null
+        : productsById[historical.productId];
+    if (product == null) {
+      problems.add('«${historical.title}» сейчас нет в меню этой точки');
+      continue;
+    }
+
+    ProductSize? size;
+    if (historical.sizeId != null) {
+      for (final candidate in product.sizes) {
+        if (candidate.id == historical.sizeId) {
+          size = candidate;
+          break;
+        }
+      }
+      if (size == null) {
+        problems.add(
+          'Для «${historical.title}» больше нет размера '
+          '«${historical.sizeLabel ?? historical.sizeId}»',
+        );
+        continue;
+      }
+    } else if (product.sizes.isNotEmpty) {
+      problems.add(
+        'В старом заказе не сохранился размер «${historical.title}»',
+      );
+      continue;
+    }
+
+    final selectedModifiers = <SelectedModifier>[];
+    var modifiersValid = true;
+    for (final historicalModifier in historical.modifiers) {
+      ModifierGroup? group;
+      for (final candidate in product.modifierGroups) {
+        if (candidate.id == historicalModifier.groupId) {
+          group = candidate;
+          break;
+        }
+      }
+      ModifierOption? option;
+      if (group != null) {
+        for (final candidate in group.options) {
+          if (candidate.id == historicalModifier.optionId) {
+            option = candidate;
+            break;
+          }
+        }
+      }
+      if (group == null || option == null) {
+        problems.add(
+          'Для «${historical.title}» недоступна добавка '
+          '«${historicalModifier.optionTitle}»',
+        );
+        modifiersValid = false;
+        break;
+      }
+      selectedModifiers.add(
+        SelectedModifier(
+          groupId: group.id,
+          groupTitle: group.title,
+          optionId: option.id,
+          optionTitle: option.title,
+          priceDelta: option.priceDelta,
+        ),
+      );
+    }
+    if (!modifiersValid) continue;
+
+    final selectedGroupIds = selectedModifiers.map((item) => item.groupId).toSet();
+    final missingRequired = product.modifierGroups
+        .where((group) => group.required && !selectedGroupIds.contains(group.id))
+        .toList();
+    if (missingRequired.isNotEmpty) {
+      problems.add(
+        'Для «${historical.title}» нужно заново выбрать: '
+        '${missingRequired.map((group) => group.title).join(', ')}',
+      );
+      continue;
+    }
+
+    restored.add(
+      CartItem(
+        product: product,
+        qty: historical.qty,
+        size: size,
+        modifiers: selectedModifiers,
+      ),
+    );
+  }
+
+  if (problems.isNotEmpty || restored.length != order.items.length) {
+    await _showRepeatProblem(
+      context,
+      'Не можем точно повторить заказ:\n\n${problems.join('\n')}',
+    );
+    return;
+  }
+
+  final cart = ref.read(cartProvider);
+  if (!cart.isEmpty) {
+    final replace = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Заменить текущую корзину?'),
+        content: const Text(
+          'Чтобы повторить заказ, текущие позиции будут заменены его полным составом.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Отмена'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Заменить'),
+          ),
+        ],
+      ),
+    );
+    if (replace != true || !context.mounted) return;
+  }
+
+  final venues = await ref.read(venuesProvider(null).future);
+  Venue? orderVenue;
+  for (final venue in venues) {
+    if (venue.id == order.venueId) {
+      orderVenue = venue;
+      break;
+    }
+  }
+  if (orderVenue == null) {
+    if (context.mounted) {
+      await _showRepeatProblem(context, 'Точка этого заказа сейчас недоступна.');
+    }
+    return;
+  }
+
+  final cities = await ref.read(citiesProvider.future);
+  for (final city in cities) {
+    if (city.id == orderVenue.cityId) {
+      ref.read(sessionProvider.notifier).setCity(city);
+      break;
+    }
+  }
+  ref.read(sessionProvider.notifier).setVenue(orderVenue);
+  ref.read(cartProvider.notifier).replaceForVenue(restored);
+  ref.invalidate(productsProvider(null));
+  if (context.mounted) context.go('/cart');
+}
+
+Future<void> _showRepeatProblem(BuildContext context, String message) {
+  return showDialog<void>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: const Text('Заказ нужно проверить'),
+      content: Text(message),
+      actions: [
+        FilledButton(
+          onPressed: () => Navigator.pop(dialogContext),
+          child: const Text('Понятно'),
+        ),
+      ],
+    ),
+  );
 }
 
 class OrderDetailScreen extends ConsumerStatefulWidget {
@@ -278,7 +483,9 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen>
         ),
       ),
       data: (order) {
+        final palette = context.kofePalette;
         final products = productsAsync.valueOrNull ?? const <Product>[];
+        final productsById = {for (final item in products) item.id: item};
         Product? product;
         final line = order.summaryLine?.toLowerCase();
         if (line != null && line.isNotEmpty) {
@@ -314,7 +521,11 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen>
         return Scaffold(
           backgroundColor: Theme.of(context).scaffoldBackgroundColor,
           appBar: AppBar(
-            title: Text(widget.activeMode ? 'Активный заказ' : 'Заказ № ${order.id}'),
+            title: Text(
+              widget.activeMode
+                  ? 'Активный заказ № ${order.displayNumber}'
+                  : 'Заказ № ${order.displayNumber}',
+            ),
             leading: IconButton(
               icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18),
               onPressed: _closeOrder,
@@ -333,7 +544,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen>
                       Text(
                         orderStatus.detailHeadline,
                         style: TextStyle(
-                          color: isCancelled ? AppColors.danger : AppColors.forest,
+                          color: isCancelled ? AppColors.danger : palette.ink,
                           fontWeight: FontWeight.w800,
                           fontSize: 20,
                         ),
@@ -343,8 +554,8 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen>
                         isCancelled
                             ? 'Этот заказ не будет приготовлен'
                             : 'Самовывоз',
-                        style: const TextStyle(
-                          color: AppColors.inkMuted,
+                        style: TextStyle(
+                          color: palette.inkMuted,
                           fontSize: 13,
                         ),
                       ),
@@ -376,8 +587,8 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen>
                                 const SizedBox(height: 2),
                                 Text(
                                   venueName,
-                                  style: const TextStyle(
-                                    color: AppColors.inkMuted,
+                        style: TextStyle(
+                          color: palette.inkMuted,
                                     fontSize: 13,
                                   ),
                                 ),
@@ -404,12 +615,12 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen>
                           child: Container(
                             height: 120,
                             width: double.infinity,
-                            color: AppColors.sageSoft.withValues(alpha: 0.55),
+                            color: palette.surfaceMuted,
                             alignment: Alignment.center,
                             child: const Text(
                               'Точка заказа недоступна',
                               style: TextStyle(
-                                color: AppColors.forest,
+                                color: palette.ink,
                                 fontWeight: FontWeight.w700,
                               ),
                             ),
@@ -429,57 +640,36 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen>
                         style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
                       ),
                       const SizedBox(height: 14),
-                      Row(
-                        children: [
-                          Container(
-                            width: 56,
-                            height: 56,
-                            padding: const EdgeInsets.all(4),
-                            decoration: BoxDecoration(
-                              color: AppColors.surface,
-                              borderRadius: BorderRadius.circular(12),
+                      if (order.items.isNotEmpty)
+                        for (var index = 0;
+                            index < order.items.length;
+                            index++) ...[
+                          _OrderItemRow(
+                            item: order.items[index],
+                            product: productsById[order.items[index].productId],
+                          ),
+                          if (index != order.items.length - 1)
+                            Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              child: Divider(
+                                height: 1,
+                        color: palette.line,
+                              ),
                             ),
-                            child: product != null
-                                ? ProductImage(asset: product.imageAsset)
-                                : const Icon(
-                                    Icons.local_cafe_outlined,
-                                    color: AppColors.forest,
-                                  ),
+                        ]
+                      else
+                        _OrderItemRow(
+                          item: OrderItemSummary(
+                            productId: product?.id,
+                            title: order.summaryLine ?? product?.title ?? 'Заказ',
+                            qty: 1,
+                            unitPrice: order.total,
+                            lineTotal: order.total,
                           ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  order.summaryLine ??
-                                      product?.title ??
-                                      'Заказ',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                                if (venue != null) ...[
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    venue.fullAddress,
-                                    style: const TextStyle(
-                                      color: AppColors.inkMuted,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                ],
-                              ],
-                            ),
-                          ),
-                          Text(
-                            '${order.total.toStringAsFixed(0)} ₽',
-                            style: const TextStyle(fontWeight: FontWeight.w800),
-                          ),
-                        ],
-                      ),
+                          product: product,
+                        ),
                       const SizedBox(height: 14),
-                      Divider(color: AppColors.ink.withValues(alpha: 0.08)),
+                      Divider(color: palette.line),
                       const SizedBox(height: 10),
                       if (order.bonusSpent > 0) ...[
                         Row(
@@ -527,7 +717,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen>
                             Text(
                               '+${order.bonusEarned} бонусов',
                               style: const TextStyle(
-                                color: AppColors.forest,
+                                color: palette.ink,
                                 fontWeight: FontWeight.w800,
                               ),
                             ),
@@ -544,9 +734,9 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen>
                     icon: const Icon(Icons.storefront_outlined),
                     label: const Text('Вернуться в меню'),
                   )
-                else if (product != null)
+                else if (!isCancelled)
                   ElevatedButton.icon(
-                    onPressed: () => context.push('/product/${product!.id}'),
+                    onPressed: () => _repeatOrder(context, ref, order),
                     icon: const Icon(Icons.replay_rounded),
                     label: const Text('Повторить заказ'),
                   ),
@@ -555,10 +745,10 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen>
                   Center(
                     child: TextButton(
                       onPressed: () => _openReview(context),
-                      child: const Text(
+                      child: Text(
                         'Оставить отзыв',
                         style: TextStyle(
-                          color: AppColors.forest,
+                          color: palette.ink,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
@@ -699,6 +889,72 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen>
       },
     );
     comment.dispose();
+  }
+}
+
+class _OrderItemRow extends StatelessWidget {
+  const _OrderItemRow({required this.item, this.product});
+
+  final OrderItemSummary item;
+  final Product? product;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.kofePalette;
+    final details = <String>[
+      if (item.sizeLabel != null)
+        '${item.sizeLabel}${item.sizeMl == null ? '' : ' · ${item.sizeMl} мл'}',
+      ...item.modifiers.map((modifier) => modifier.optionTitle),
+    ];
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 56,
+          height: 56,
+          padding: const EdgeInsets.all(4),
+          decoration: BoxDecoration(
+            color: palette.surfaceMuted,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: product != null
+              ? ProductImage(asset: product!.imageAsset)
+              : Icon(
+                  Icons.local_cafe_outlined,
+                  color: palette.ink,
+                ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                item.title,
+                style: const TextStyle(fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                [
+                  '× ${item.qty}',
+                  if (details.isNotEmpty) details.join(', '),
+                ].join(' · '),
+                              style: TextStyle(
+                                color: palette.inkMuted,
+                  fontSize: 12,
+                  height: 1.35,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 10),
+        Text(
+          '${item.lineTotal.toStringAsFixed(0)} ₽',
+          style: const TextStyle(fontWeight: FontWeight.w800),
+        ),
+      ],
+    );
   }
 }
 

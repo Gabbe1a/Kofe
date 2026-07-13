@@ -1,4 +1,4 @@
-# Кофе Мама — Flutter UI skeleton
+# Кофе — Flutter UI skeleton
 
 Мобильное приложение самовывоза **«С собой»** по ТЗ v1.2 + AURA (Jannat).
 

@@ -18,6 +18,9 @@ services:
       - ./sql/migrate_admin_operations.sql:/docker-entrypoint-initdb.d/08_admin_operations.sql:ro
       - ./sql/migrate_staff_admin_crud.sql:/docker-entrypoint-initdb.d/09_staff_admin_crud.sql:ro
       - ./sql/migrate_loyalty.sql:/docker-entrypoint-initdb.d/10_loyalty.sql:ro
+      - ./sql/migrate_order_display_repeat.sql:/docker-entrypoint-initdb.d/11_order_display_repeat.sql:ro
+      - ./sql/migrate_free_syrups.sql:/docker-entrypoint-initdb.d/12_free_syrups.sql:ro
+      - ./sql/migrate_rebrand_kofe.sql:/docker-entrypoint-initdb.d/13_rebrand_kofe.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U kofe -d kofe_mama"]
       interval: 5s

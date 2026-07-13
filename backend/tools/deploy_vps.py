@@ -23,6 +23,7 @@ RUNTIME_KEYS = (
     'MEDIA_BASE_URL', 'STAFF_TOKEN_SECRET', 'ADMIN_BOOTSTRAP_EMAIL',
     'ADMIN_BOOTSTRAP_PASSWORD', 'YOOKASSA_SHOP_ID', 'YOOKASSA_SECRET_KEY',
     'YOOKASSA_RETURN_URL',
+    'YANDEX_MAPS_API_KEY',
 )
 FILES = (
     'docker-compose.yml',
@@ -39,6 +40,9 @@ FILES = (
     'sql/migrate_admin_operations.sql',
     'sql/migrate_staff_admin_crud.sql',
     'sql/migrate_loyalty.sql',
+    'sql/migrate_order_display_repeat.sql',
+    'sql/migrate_free_syrups.sql',
+    'sql/migrate_rebrand_kofe.sql',
 )
 
 
@@ -112,6 +116,9 @@ def main() -> None:
             ('08', 'admin_operations'),
             ('09', 'staff_admin_crud'),
             ('10', 'loyalty'),
+            ('11', 'order_display_repeat'),
+            ('12', 'free_syrups'),
+            ('13', 'rebrand_kofe'),
         ):
             run(
                 client,

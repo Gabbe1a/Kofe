@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
@@ -27,11 +28,24 @@ class KofeApi {
   }
 
   Future<dynamic> _get(String path, [Map<String, String>? query]) async {
-    final res = await _client.get(_u(path, query)).timeout(const Duration(seconds: 20));
-    if (res.statusCode < 200 || res.statusCode >= 300) {
-      throw ApiException(_message(res), statusCode: res.statusCode);
+    for (var attempt = 0; attempt < 2; attempt++) {
+      try {
+        final res = await _client
+            .get(_u(path, query))
+            .timeout(const Duration(seconds: 20));
+        if (res.statusCode < 200 || res.statusCode >= 300) {
+          throw ApiException(_message(res), statusCode: res.statusCode);
+        }
+        return jsonDecode(utf8.decode(res.bodyBytes));
+      } on http.ClientException {
+        if (attempt == 1) rethrow;
+        await Future<void>.delayed(const Duration(milliseconds: 450));
+      } on TimeoutException {
+        if (attempt == 1) rethrow;
+        await Future<void>.delayed(const Duration(milliseconds: 450));
+      }
     }
-    return jsonDecode(utf8.decode(res.bodyBytes));
+    throw StateError('GET retry loop completed unexpectedly');
   }
 
   Future<dynamic> _post(String path, Map<String, dynamic> body) async {
@@ -180,7 +194,7 @@ class KofeApi {
       'bonus_points': bonusPoints,
       'address_confirmed': true,
       'comment': _optionalText(comment),
-      'pickup_at': pickupAt?.toIso8601String(),
+      'pickup_at': pickupAt?.toUtc().toIso8601String(),
       'idempotency_key': idempotencyKey,
     }) as Map<String, dynamic>;
     return CheckoutOrder(

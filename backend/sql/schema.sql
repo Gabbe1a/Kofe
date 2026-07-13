@@ -1,4 +1,4 @@
--- Kofe Mama — schema (test VPS)
+-- Kofe — schema (test VPS)
 
 CREATE TABLE cities (
   id TEXT PRIMARY KEY,
@@ -94,8 +94,11 @@ CREATE TABLE users (
   bonus_balance INT NOT NULL DEFAULT 0
 );
 
+CREATE SEQUENCE IF NOT EXISTS orders_public_number_seq START WITH 10001;
+
 CREATE TABLE orders (
   id TEXT PRIMARY KEY,
+  public_number BIGINT NOT NULL DEFAULT nextval('orders_public_number_seq'),
   user_id TEXT REFERENCES users(id),
   venue_id TEXT REFERENCES venues(id),
   status TEXT NOT NULL,
@@ -106,6 +109,8 @@ CREATE TABLE orders (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   summary_line TEXT
 );
+
+CREATE UNIQUE INDEX orders_public_number_uidx ON orders(public_number);
 
 CREATE TABLE bonus_transactions (
   id TEXT PRIMARY KEY,

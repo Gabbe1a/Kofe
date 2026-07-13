@@ -265,7 +265,7 @@ class _YandexVenueMapState extends State<_YandexVenueMap> {
       scrollGesturesEnabled: widget.interactive,
       zoomGesturesEnabled: widget.interactive,
       fastTapEnabled: true,
-      nightModeEnabled: false,
+      nightModeEnabled: Theme.of(context).brightness == Brightness.dark,
       logoAlignment: const MapAlignment(
         horizontal: HorizontalAlignment.left,
         vertical: VerticalAlignment.top,

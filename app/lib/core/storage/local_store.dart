@@ -59,6 +59,7 @@ Map<String, dynamic> _encodeSession(SessionState s) => {
       'savedComment': s.savedComment,
       'hasSeenWelcome': s.hasSeenWelcome,
       'themePreference': s.themePreference.name,
+      'notificationsEnabled': s.notificationsEnabled,
       'city': s.city == null
           ? null
           : {'id': s.city!.id, 'name': s.city!.name},
@@ -90,6 +91,7 @@ SessionState _decodeSession(Map<String, dynamic>? j) {
     saveComment: j['saveComment'] as bool? ?? false,
     hasSeenWelcome: j['hasSeenWelcome'] as bool? ?? hasStoredPlace,
     themePreference: ThemePreference.fromStorage(j['themePreference'] as String?),
+    notificationsEnabled: j['notificationsEnabled'] as bool? ?? true,
   );
 }
 

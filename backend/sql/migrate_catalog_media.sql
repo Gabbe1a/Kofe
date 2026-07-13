@@ -57,10 +57,10 @@ INSERT INTO media_assets (id, object_key, content_type, alt_text) VALUES
   ('media_lemonade', 'products/lemonade_cutout.webp', 'image/webp', 'Лимонад'),
   ('media_cappuccino', 'products/cappuccino_cutout.webp', 'image/webp', 'Капучино'),
   ('media_croissant', 'products/croissant_cutout.webp', 'image/webp', 'Круассан шоколадный'),
-  ('media_promo_01', 'promo/promo_01.webp', 'image/webp', 'Франшиза Кофе Мама'),
+  ('media_promo_01', 'promo/promo_01.webp', 'image/webp', 'Франшиза Кофе'),
   ('media_promo_02', 'promo/promo_02.webp', 'image/webp', '100 баллов за сторис'),
   ('media_promo_03', 'promo/promo_03.webp', 'image/webp', 'Амбассадоры'),
-  ('media_promo_04', 'promo/promo_04.webp', 'image/webp', 'Социальные сети Кофе Мама')
+  ('media_promo_04', 'promo/promo_04.webp', 'image/webp', 'Социальные сети Кофе')
 ON CONFLICT (id) DO UPDATE SET object_key = EXCLUDED.object_key, content_type = EXCLUDED.content_type, alt_text = EXCLUDED.alt_text;
 
 UPDATE products SET image_media_id = CASE id

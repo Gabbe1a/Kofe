@@ -17,6 +17,10 @@ CREATE TABLE IF NOT EXISTS order_items (
   order_id TEXT NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
   product_id TEXT REFERENCES products(id),
   title_snapshot TEXT NOT NULL,
+  size_id TEXT,
+  size_label TEXT,
+  size_ml INT,
+  size_price_delta NUMERIC(10,2) NOT NULL DEFAULT 0,
   qty INT NOT NULL CHECK (qty > 0),
   unit_price NUMERIC(10,2) NOT NULL,
   line_total NUMERIC(10,2) NOT NULL

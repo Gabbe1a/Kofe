@@ -112,6 +112,7 @@ UserProfile mapUser(Map<String, dynamic> j) => UserProfile(
 
 OrderSummary mapOrder(Map<String, dynamic> j) => OrderSummary(
       id: j['id'] as String,
+      number: (j['number'] as num?)?.toInt(),
       status: j['status'] as String,
       total: (j['total'] as num).toDouble(),
       createdAt: DateTime.parse(j['createdAt'] as String),
@@ -120,6 +121,36 @@ OrderSummary mapOrder(Map<String, dynamic> j) => OrderSummary(
       paymentTotal: (j['paymentTotal'] as num?)?.toDouble(),
       bonusSpent: j['bonusSpent'] as int? ?? 0,
       bonusEarned: j['bonusEarned'] as int? ?? 0,
+      items: (j['items'] as List<dynamic>? ?? const [])
+          .map((raw) {
+            final item = raw as Map<String, dynamic>;
+            return OrderItemSummary(
+              productId: item['productId'] as String?,
+              title: item['title'] as String,
+              qty: (item['qty'] as num).toInt(),
+              unitPrice: (item['unitPrice'] as num).toDouble(),
+              lineTotal: (item['lineTotal'] as num).toDouble(),
+              sizeId: item['sizeId'] as String?,
+              sizeLabel: item['sizeLabel'] as String?,
+              sizeMl: (item['sizeMl'] as num?)?.toInt(),
+              sizePriceDelta:
+                  (item['sizePriceDelta'] as num?)?.toDouble() ?? 0,
+              modifiers: (item['modifiers'] as List<dynamic>? ?? const [])
+                  .map((rawModifier) {
+                    final modifier = rawModifier as Map<String, dynamic>;
+                    return OrderItemModifierSummary(
+                      groupId: modifier['groupId'] as String?,
+                      groupTitle: modifier['groupTitle'] as String,
+                      optionId: modifier['optionId'] as String?,
+                      optionTitle: modifier['optionTitle'] as String,
+                      priceDelta:
+                          (modifier['priceDelta'] as num?)?.toDouble() ?? 0,
+                    );
+                  })
+                  .toList(),
+            );
+          })
+          .toList(),
     );
 
 AppNotification mapNotification(Map<String, dynamic> j) => AppNotification(

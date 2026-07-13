@@ -1,11 +1,11 @@
 {
-    "name": "kofe_mama",
-    "short_name": "kofe_mama",
+    "name": "Кофе",
+    "short_name": "Кофе",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "description": "Кофе — заказ напитков с собой.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

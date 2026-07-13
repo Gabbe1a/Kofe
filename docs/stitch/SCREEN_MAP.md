@@ -1,6 +1,6 @@
-# Кофе Мама — Stitch screen map
+# Кофе — Stitch screen map
 
-Project: `projects/3138235047997111615` (Kofe Mama Mobile App)  
+Project: `projects/3138235047997111615` (Кофе Mobile App)
 Refs: `docs/stitch/refs/*.png` + `*.html`
 
 ## Navigation contract

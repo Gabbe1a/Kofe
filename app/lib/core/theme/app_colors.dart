@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-/// Aura / Source 1 colour primitives for «Кофе Мама».
+/// Aura / Source 1 colour primitives for «Кофе».
 ///
 /// These constants retain compatibility with legacy widgets. New or redesigned
 /// widgets must read the contextual [KofePalette] to honour dark mode.

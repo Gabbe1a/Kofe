@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/providers.dart';
@@ -11,6 +12,9 @@ import 'core/config/app_config.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await SystemChrome.setPreferredOrientations(const [
+    DeviceOrientation.portraitUp,
+  ]);
   final store = await LocalStore.open();
   bindLocalStore(store);
 
@@ -37,7 +41,7 @@ class KofeMamaApp extends ConsumerWidget {
     final preference = ref.watch(sessionProvider.select((s) => s.themePreference));
     return OrderStatusSync(
       child: MaterialApp.router(
-        title: 'Кофе Мама',
+        title: 'Кофе',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.light(),
         darkTheme: AppTheme.dark(),

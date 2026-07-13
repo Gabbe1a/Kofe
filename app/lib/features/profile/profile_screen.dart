@@ -72,103 +72,101 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             KofeSectionTitle(title: session.isAuthed ? 'Профиль' : 'Настройки'),
             const SizedBox(height: 10),
             if (session.isAuthed) ...[
-              KofeSurface(
-                padding: EdgeInsets.zero,
-                color: palette.surface,
-                child: Column(
-                  children: [
-                    _ProfileRow(
-                      icon: Icons.receipt_long_outlined,
-                      title: 'История заказов',
-                      onTap: () => context.push('/orders'),
-                    ),
-                    if (lastOrder != null)
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(14),
-                          onTap: () => context.push('/orders/${lastOrder.id}'),
-                          child: Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: palette.surfaceMuted,
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        '${orderDateFmt.format(lastOrder.createdAt)} · ${lastOrder.status.localized}',
-                                        style: TextStyle(
-                                          color: palette.inkMuted,
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w700,
-                                        ),
+              Column(
+                children: [
+                  _ProfileRow(
+                    icon: Icons.receipt_long_outlined,
+                    title: 'История заказов',
+                    onTap: () => context.push('/orders'),
+                  ),
+                  if (lastOrder != null)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 14),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(14),
+                        onTap: () => context.push('/orders/${lastOrder.id}'),
+                        child: Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: palette.surfaceMuted,
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      '${orderDateFmt.format(lastOrder.createdAt)} · ${lastOrder.status.localized}',
+                                      style: TextStyle(
+                                        color: palette.inkMuted,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w700,
                                       ),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        lastOrder.summaryLine ?? 'Заказ',
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.w600,
-                                          fontSize: 14,
-                                        ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      lastOrder.summaryLine ?? 'Заказ',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 14,
                                       ),
-                                    ],
-                                  ),
+                                    ),
+                                  ],
                                 ),
-                                Text(
-                                  '${lastOrder.total.toStringAsFixed(0)} ₽',
-                                  style: TextStyle(
-                                    color: palette.ink,
-                                    fontWeight: FontWeight.w800,
-                                  ),
+                              ),
+                              Text(
+                                '${lastOrder.total.toStringAsFixed(0)} ₽',
+                                style: TextStyle(
+                                  color: palette.ink,
+                                  fontWeight: FontWeight.w800,
                                 ),
-                              ],
-                            ),
+                              ),
+                            ],
                           ),
                         ),
                       ),
-                  ],
-                ),
+                    ),
+                ],
               ),
               const SizedBox(height: 12),
-              KofeSurface(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                color: palette.surface,
-                child: Row(
-                  children: [
-                    KofeRoundIcon(
-                      icon: Icons.notifications_none_rounded,
-                      color: palette.surfaceMuted,
-                      iconColor: palette.ink,
-                    ),
-                    const SizedBox(width: 12),
-                    const Expanded(
-                      child: Text(
-                        'Уведомления',
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w800,
+              InkWell(
+                onTap: () => _openNotifications(context),
+                borderRadius: BorderRadius.circular(12),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Row(
+                    children: [
+                      KofeRoundIcon(
+                        icon: Icons.notifications_none_rounded,
+                        color: palette.surfaceMuted,
+                        iconColor: palette.ink,
+                      ),
+                      const SizedBox(width: 12),
+                      const Expanded(
+                        child: Text(
+                          'Уведомления',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800,
+                          ),
                         ),
                       ),
-                    ),
-                    Switch.adaptive(
-                      value: true,
-                      onChanged: (_) => _openNotifications(context),
-                    ),
-                  ],
+                      Switch.adaptive(
+                        value: session.notificationsEnabled,
+                        onChanged: ref
+                            .read(sessionProvider.notifier)
+                            .setNotificationsEnabled,
+                      ),
+                    ],
+                  ),
                 ),
               ),
               const SizedBox(height: 12),
-              KofeSurface(
-                padding: EdgeInsets.zero,
-                color: palette.surface,
-                child: Column(
-                  children: [
+              Column(
+                children: [
                     _ProfileRow(
                       icon: Icons.brightness_6_outlined,
                       title: 'Тема оформления',
@@ -184,7 +182,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     _ProfileRow(
                       icon: Icons.info_outline_rounded,
                       title: 'О приложении',
-                      subtitle: 'Кофе Мама, версия 1.0',
+                      subtitle: 'Кофе, версия 1.0',
                       onTap: () => _showAbout(context),
                     ),
                     _ProfileRow(
@@ -197,15 +195,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         'Правовая информация будет открыта в приложении.',
                       ),
                     ),
-                  ],
-                ),
+                ],
               ),
             ] else
-              KofeSurface(
-                padding: EdgeInsets.zero,
-                color: palette.surface,
-                child: Column(
-                  children: [
+              Column(
+                children: [
                     _ProfileRow(
                       icon: Icons.brightness_6_outlined,
                       title: 'Тема оформления',
@@ -221,7 +215,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     _ProfileRow(
                       icon: Icons.info_outline_rounded,
                       title: 'О приложении',
-                      subtitle: 'Кофе Мама, версия 1.0',
+                      subtitle: 'Кофе, версия 1.0',
                       onTap: () => _showAbout(context),
                     ),
                     _ProfileRow(
@@ -243,8 +237,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         'Форма обратной связи будет доступна позже.',
                       ),
                     ),
-                  ],
-                ),
+                ],
               ),
             if (session.isAuthed) ...[
               const SizedBox(height: 22),
@@ -271,7 +264,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   static void _showAbout(BuildContext context) {
     showAboutDialog(
       context: context,
-      applicationName: 'Кофе Мама',
+      applicationName: 'Кофе',
       applicationVersion: '1.0.0 mock',
       children: const [
         Text('Мобильное приложение для заказа кофе, десертов и бонусов.'),
@@ -351,7 +344,7 @@ class _BrandRow extends StatelessWidget {
         ),
         const SizedBox(width: 12),
         const Text(
-          'Кофе Мама',
+          'Кофе',
           style: TextStyle(
             fontSize: 28,
             fontWeight: FontWeight.w900,
@@ -371,11 +364,8 @@ class _GuestCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.kofePalette;
-    return KofeSurface(
-      color: palette.surface,
-      padding: const EdgeInsets.fromLTRB(24, 26, 24, 22),
-      child: Column(
-        children: [
+    return Column(
+      children: [
           Container(
             width: 78,
             height: 78,
@@ -420,8 +410,7 @@ class _GuestCard extends StatelessWidget {
               child: const Text('Войти'),
             ),
           ),
-        ],
-      ),
+      ],
     );
   }
 }
@@ -448,12 +437,9 @@ class _MemberCard extends StatelessWidget {
         .join()
         .toUpperCase();
 
-    return KofeSurface(
-      color: palette.surface,
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 18),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
           Row(
             children: [
               Container(
@@ -545,8 +531,7 @@ class _MemberCard extends StatelessWidget {
               ],
             ),
           ),
-        ],
-      ),
+      ],
     );
   }
 }
@@ -574,7 +559,7 @@ class _ProfileRow extends StatelessWidget {
         InkWell(
           onTap: onTap,
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            padding: const EdgeInsets.symmetric(vertical: 14),
             child: Row(
               children: [
                 KofeRoundIcon(icon: icon),
@@ -616,7 +601,7 @@ class _ProfileRow extends StatelessWidget {
             ),
           ),
         ),
-        if (showDivider) Divider(height: 1, indent: 70, color: palette.line),
+        if (showDivider) Divider(height: 1, indent: 54, color: palette.line),
       ],
     );
   }

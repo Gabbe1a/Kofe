@@ -1,4 +1,4 @@
-# Kofe Mama backend (MVP)
+# Кофе — backend MVP
 
 Docker Compose runs PostgreSQL 16 and FastAPI. PostgreSQL is private; API is
 published on ports **80** and **8080**.
@@ -14,6 +14,9 @@ ignored by Git. It contains database, Object Storage and first-admin secrets.
 - `ADMIN_BOOTSTRAP_EMAIL` and `ADMIN_BOOTSTRAP_PASSWORD` create the first admin
   at app startup only when both are set. Change the password operationally after
   the first login; never commit it.
+- `YANDEX_MAPS_API_KEY` enables the interactive venue picker in Staff Web.
+  This is a browser key, so restrict it to the admin origin in the Yandex
+  developer dashboard. The value still belongs only in the ignored env file.
 
 The bucket itself is intentionally not created by the application. Create a
 private-admin/public-read (or CDN-backed) Yandex Object Storage bucket first,
@@ -37,6 +40,12 @@ docker compose exec -T db psql -U kofe -d kofe_mama -f /docker-entrypoint-initdb
 docker compose exec -T db psql -U kofe -d kofe_mama -f /docker-entrypoint-initdb.d/05_catalog_media.sql
 docker compose exec -T db psql -U kofe -d kofe_mama -f /docker-entrypoint-initdb.d/06_order_core.sql
 docker compose exec -T db psql -U kofe -d kofe_mama -f /docker-entrypoint-initdb.d/07_yookassa.sql
+docker compose exec -T db psql -U kofe -d kofe_mama -f /docker-entrypoint-initdb.d/08_admin_operations.sql
+docker compose exec -T db psql -U kofe -d kofe_mama -f /docker-entrypoint-initdb.d/09_staff_admin_crud.sql
+docker compose exec -T db psql -U kofe -d kofe_mama -f /docker-entrypoint-initdb.d/10_loyalty.sql
+docker compose exec -T db psql -U kofe -d kofe_mama -f /docker-entrypoint-initdb.d/11_order_display_repeat.sql
+docker compose exec -T db psql -U kofe -d kofe_mama -f /docker-entrypoint-initdb.d/12_free_syrups.sql
+docker compose exec -T db psql -U kofe -d kofe_mama -f /docker-entrypoint-initdb.d/13_rebrand_kofe.sql
 ```
 
 ## Media and staff admin
