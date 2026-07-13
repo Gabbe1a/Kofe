@@ -1,0 +1,12 @@
+{
+  "source_specific_shapes": [],
+  "standard_shapes": {
+    "product_card": "12px rounded rectangle",
+    "bottom_sheet": "24px top rounded rectangle",
+    "quantity_control": "circular buttons",
+    "category_chip": "9px rounded rectangle",
+    "floating_cart": "full pill"
+  },
+  "note": "Source uses standard cards, sheets and pills; no proprietary blob, stamp or ribbon needs shape replication."
+}
+

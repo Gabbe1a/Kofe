@@ -1,0 +1,3 @@
+# Local Android settings — copy the required line to android/local.properties.
+# Never commit android/local.properties or a real MapKit key.
+MAPKIT_API_KEY=replace-with-your-yandex-mapkit-key

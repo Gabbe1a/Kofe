@@ -1,0 +1,8 @@
+{
+  "reference_only": [
+    {"path": "ref/behance_coffee_app/source_01.png", "origin": "Behance public project", "usage": "visual analysis only"},
+    {"path": "ref/behance_coffee_app/source_02.png", "origin": "Behance public project", "usage": "visual analysis only"}
+  ],
+  "release_assets": "Use only Kofe Mama approved assets and Object Storage media."
+}
+

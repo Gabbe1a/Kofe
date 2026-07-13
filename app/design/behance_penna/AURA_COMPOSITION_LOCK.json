@@ -1,0 +1,7 @@
+{
+  "catalog": ["location-row", "search", "category-chips", "two-column-product-grid", "floating-cart"],
+  "pdp": ["immersive-product-image", "bottom-sheet", "product-name", "description", "composition", "size-selector", "primary-cta"],
+  "cart": ["title", "cart-rows", "recommendation-rail", "summary-card", "pickup-card", "takeaway-control"],
+  "mobile_rules": {"horizontal_padding": 16, "card_gap": 10, "min_tap_target": 44}
+}
+

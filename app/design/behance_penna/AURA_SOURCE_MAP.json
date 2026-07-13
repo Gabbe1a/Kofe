@@ -1,0 +1,17 @@
+{
+  "source": "https://www.behance.net/gallery/231691575/Mobile-app-design-for-a-coffee-shop",
+  "author": "Artem Ignatev",
+  "saved_references": [
+    "ref/behance_coffee_app/source_01.png",
+    "ref/behance_coffee_app/source_02.png"
+  ],
+  "screens": [
+    {"id": "welcome", "type": "onboarding", "theme": "dark", "target": "app/lib/features/onboarding"},
+    {"id": "catalog-light", "type": "catalog", "theme": "light", "target": "app/lib/features/menu/menu_screen.dart"},
+    {"id": "catalog-dark", "type": "catalog", "theme": "dark", "target": "app/lib/features/menu/menu_screen.dart"},
+    {"id": "pdp", "type": "product-detail", "theme": "light", "target": "app/lib/features/product/product_screen.dart"},
+    {"id": "cart-light", "type": "cart", "theme": "light", "target": "app/lib/features/cart/cart_screen.dart"},
+    {"id": "cart-dark", "type": "cart", "theme": "dark", "target": "app/lib/features/cart/cart_screen.dart"}
+  ]
+}
+

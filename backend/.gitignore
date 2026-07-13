@@ -1,0 +1,5 @@
+backend/.env
+.env.vps.local
+**/__pycache__/
+*.pyc
+.DS_Store

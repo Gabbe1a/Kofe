@@ -1,0 +1,43 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: kofe_mama
+      POSTGRES_USER: kofe
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./sql/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+      - ./sql/seed.sql:/docker-entrypoint-initdb.d/02_seed.sql:ro
+      - ./sql/migrate_orders_venue.sql:/docker-entrypoint-initdb.d/03_orders_venue.sql:ro
+      - ./sql/migrate_add_syrup_modifiers.sql:/docker-entrypoint-initdb.d/04_syrup_modifiers.sql:ro
+      - ./sql/migrate_catalog_media.sql:/docker-entrypoint-initdb.d/05_catalog_media.sql:ro
+      - ./sql/migrate_order_core.sql:/docker-entrypoint-initdb.d/06_order_core.sql:ro
+      - ./sql/migrate_yookassa.sql:/docker-entrypoint-initdb.d/07_yookassa.sql:ro
+      - ./sql/migrate_admin_operations.sql:/docker-entrypoint-initdb.d/08_admin_operations.sql:ro
+      - ./sql/migrate_staff_admin_crud.sql:/docker-entrypoint-initdb.d/09_staff_admin_crud.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kofe -d kofe_mama"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    # Postgres is NOT published to the internet.
+
+  api:
+    build: ./api
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+      - "80:8080"
+    env_file:
+      # Kept outside Git. Copy .env.example to this file before first boot.
+      - .env.vps.local
+    environment:
+      DATABASE_URL: "postgresql://kofe:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@db:5432/kofe_mama"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:

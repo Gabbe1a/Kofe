@@ -1,0 +1,12 @@
+{
+  "LocationHeader": "Existing venue session + menu header",
+  "SearchField": "Existing productSearchProvider",
+  "CategoryChips": "Existing categoriesProvider / category navigation",
+  "ProductTile": "ProductImage + server-priced Product",
+  "FloatingCart": "cartProvider total quantity / total",
+  "ProductBottomSheet": "Existing PDP sizes and modifier groups",
+  "CartQuantityControl": "Existing CartNotifier.setQty",
+  "RecommendationRail": "Existing cart upsell rail",
+  "PickupSummary": "Existing venue + cart address confirmation"
+}
+

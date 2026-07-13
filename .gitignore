@@ -1,0 +1,58 @@
+# --- Secrets and machine-specific configuration ---
+.env
+.env.*
+!.env.example
+!**/.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.keystore
+*.jks
+*.mobileprovision
+**/local.properties
+**/google-services.json
+**/service-account*.json
+
+# --- Build output and tool caches ---
+**/.dart_tool/
+**/.pub/
+**/.pub-cache/
+**/build/
+**/coverage/
+**/.gradle/
+**/.cxx/
+**/__pycache__/
+*.py[cod]
+*.log
+*.apk
+*.aab
+*.ipa
+*.sqlite
+*.sqlite3
+*.db
+*.dump
+*.bak
+*.backup
+
+# --- Editor files ---
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+*.swp
+.DS_Store
+
+# --- Local work materials; not part of the distributable product ---
+/.agents/
+/.codex/
+/BAGI/
+/teya-memory/
+/ref/
+/2026_*_IMG_*.PNG
+/yandex-maps-mobile-integration.md
+/docs/artifacts/
+/docs/stitch/refs/
+# Superseded provisioning helper; use backend/tools/deploy_vps.py instead.
+/backend/deploy_vps.py
